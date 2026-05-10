@@ -1,0 +1,17 @@
+{
+  "name": "universe-os",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@titaniumnetwork-dev/ultraviolet": "^3.2.6",
+    "@tomphttp/bare-server-node": "^2.0.3",
+    "@mercuryworkshop/bare-mux": "^2.0.3",
+    "@mercuryworkshop/epoxy-transport": "^2.1.3",
+    "@mercuryworkshop/bare-as-module3": "^2.2.2",
+    "wisp-server-node": "^1.1.3",
+    "express": "^4.18.2"
+  }
+}
