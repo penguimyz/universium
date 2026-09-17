@@ -12,6 +12,6 @@ RUN npm install
 COPY . .
 
 ENV PORT=8080
-CMD tailscaled --tun=userspace-networking --state=/data/tailscale/tailscaled.state & sleep 2 && \
-    tailscale up --authkey=${TAILSCALE_AUTHKEY} --accept-routes && \
-    node server.js
+CMD tailscaled --tun=userspace-networking --state=/data/tailscale/tailscaled.state --socks5-server=localhost:1055 & sleep 2 && \
+tailscale up --authkey=${TAILSCALE_AUTHKEY} --accept-routes && \
+node server.js
