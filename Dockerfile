@@ -1,5 +1,7 @@
 FROM node:20-slim
 
+ARG CACHEBUST=1
+
 RUN apt-get update && apt-get install -y curl && \
     curl -fsSL https://tailscale.com/install.sh | sh && \
     rm -rf /var/lib/apt/lists/*
