@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { request as httpsRequest } from "node:https";
+import { request as httpRequest } from "node:http";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
@@ -327,32 +328,54 @@ app.get("/api/tv/:id", (req, res) =>
 // goes through it, so TMDB etc. stay on their normal direct path.
 app.use(express.json());
 
+app.use(express.json());
+
 app.post("/api/ai/chat", async (req, res) => {
-  try {
-    const { message, model = "deepseek-r1:7b" } = req.body;
-    if (!message || typeof message !== "string") {
-      return res.status(400).json({ error: "message (string) is required" });
-    }
+  const { message, model = "deepseek-r1:7b" } = req.body;
+  if (!message || typeof message !== "string") {
+    return res.status(400).json({ error: "message (string) is required" });
+  }
 
-    const upstream = await fetch(`${OLLAMA_HOST}/api/generate`, {
+  const payload = JSON.stringify({ model, prompt: message, stream: false });
+  const target = new URL(`${OLLAMA_HOST}/api/generate`);
+
+  const upstreamReq = httpRequest(
+    {
+      hostname: target.hostname,
+      port: target.port || 80,
+      path: target.pathname,
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, prompt: message, stream: false }),
-      dispatcher: ollamaAgent,
-    });
-
-    if (!upstream.ok) {
-      const detail = await upstream.text();
-      console.error("Ollama upstream error:", upstream.status, detail);
-      return res.status(502).json({ error: "Ollama error", detail });
+      agent: ollamaAgent,
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+      },
+    },
+    (upstreamRes) => {
+      let body = "";
+      upstreamRes.on("data", (chunk) => (body += chunk));
+      upstreamRes.on("end", () => {
+        if (upstreamRes.statusCode !== 200) {
+          console.error("Ollama upstream error:", upstreamRes.statusCode, body);
+          return res.status(502).json({ error: "Ollama error", detail: body });
+        }
+        try {
+          const data = JSON.parse(body);
+          res.json({ response: data.response, model: data.model });
+        } catch (e) {
+          res.status(502).json({ error: "Bad response from Ollama", detail: body });
+        }
+      });
     }
+  );
 
-    const data = await upstream.json();
-    res.json({ response: data.response, model: data.model });
-  } catch (err) {
+  upstreamReq.on("error", (err) => {
     console.error("Ollama proxy error:", err.message);
     res.status(502).json({ error: "Unable to reach Ollama", detail: err.message });
-  }
+  });
+
+  upstreamReq.write(payload);
+  upstreamReq.end();
 });
 
 // ── UV / transport routes ─────────────────────────────────────────────────────
