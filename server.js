@@ -331,13 +331,20 @@ app.use(express.json());
 app.use(express.json());
 
 app.post("/api/ai/chat", async (req, res) => {
-  const { message, model = "deepseek-r1:7b" } = req.body;
-  if (!message || typeof message !== "string") {
-    return res.status(400).json({ error: "message (string) is required" });
+  const { messages, model = "deepseek-r1:7b" } = req.body;
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return res.status(400).json({ error: "messages (array) is required" });
   }
 
-  const payload = JSON.stringify({ model, prompt: message, stream: false });
-  const target = new URL(`${OLLAMA_HOST}/api/generate`);
+  const payload = JSON.stringify({
+    model,
+    messages: [
+      { role: "system", content: "You are a quick helpful assistant embedded in Universium, a browser/unblocker app. Keep replies short and direct — 1-3 sentences unless detail is clearly needed. No disclaimers. No bullet lists unless asked. Plain conversational text." },
+      ...messages,
+    ],
+    stream: false,
+  });
+  const target = new URL(`${OLLAMA_HOST}/api/chat`);
 
   const upstreamReq = httpRequest(
     {
@@ -361,7 +368,7 @@ app.post("/api/ai/chat", async (req, res) => {
         }
         try {
           const data = JSON.parse(body);
-          res.json({ response: data.response, model: data.model });
+          res.json({ response: data.message?.content, model: data.model });
         } catch (e) {
           res.status(502).json({ error: "Bad response from Ollama", detail: body });
         }
