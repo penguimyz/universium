@@ -9,11 +9,21 @@ import { epoxyPath } from "@mercuryworkshop/epoxy-transport";
 import { baremuxPath } from "@mercuryworkshop/bare-mux/node";
 import wisp from "wisp-server-node";
 import barePkg from "@tomphttp/bare-server-node";
+import { SocksProxyAgent } from "socks-proxy-agent";
 const { createBareServer } = barePkg;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const bare = createBareServer("/bare/");
 const app = express();
+
+// ── Ollama (AI) config ────────────────────────────────────────────────────────
+// Ollama runs on a Windows box reachable only over the Tailscale tailnet.
+// This container's tailscaled runs in userspace-networking mode, so it exposes
+// a local SOCKS5 proxy (see Dockerfile: --socks5-server=localhost:1055)
+// instead of a real network interface. Only calls to Ollama need to go through
+// it — TMDB and everything else on the public internet stay direct.
+const OLLAMA_HOST = process.env.OLLAMA_HOST || "http://100.75.157.36:11434";
+const ollamaAgent = new SocksProxyAgent("socks5h://localhost:1055");
 
 // ── SW suppressor ─────────────────────────────────────────────────────────────
 const SW_SUPPRESSOR = `<script>(function(){try{
@@ -308,6 +318,42 @@ app.get("/api/tv/:id/season/:season", (req, res) =>
 app.get("/api/tv/:id", (req, res) =>
   proxyTmdb(res, `/tv/${encodeURIComponent(req.params.id)}`, { append_to_response: "credits" })
 );
+
+// ── AI chat (Ollama over Tailscale) ──────────────────────────────────────────
+// Ollama's HTTP API only accepts requests over the tailnet, and Node's plain
+// fetch() has no proxy support — it ignores ALL_PROXY/HTTP_PROXY by default.
+// Passing `dispatcher: ollamaAgent` explicitly routes this one call through
+// the local SOCKS5 endpoint tailscaled exposes; nothing else on the server
+// goes through it, so TMDB etc. stay on their normal direct path.
+app.use(express.json());
+
+app.post("/api/ai/chat", async (req, res) => {
+  try {
+    const { message, model = "deepseek-r1:7b" } = req.body;
+    if (!message || typeof message !== "string") {
+      return res.status(400).json({ error: "message (string) is required" });
+    }
+
+    const upstream = await fetch(`${OLLAMA_HOST}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model, prompt: message, stream: false }),
+      dispatcher: ollamaAgent,
+    });
+
+    if (!upstream.ok) {
+      const detail = await upstream.text();
+      console.error("Ollama upstream error:", upstream.status, detail);
+      return res.status(502).json({ error: "Ollama error", detail });
+    }
+
+    const data = await upstream.json();
+    res.json({ response: data.response, model: data.model });
+  } catch (err) {
+    console.error("Ollama proxy error:", err.message);
+    res.status(502).json({ error: "Unable to reach Ollama", detail: err.message });
+  }
+});
 
 // ── UV / transport routes ─────────────────────────────────────────────────────
 app.get("/sw.js", (_req, res) => {
