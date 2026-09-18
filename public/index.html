@@ -2804,7 +2804,7 @@ document.getElementById('home-inp').addEventListener('keydown',   e => { if (e.k
       const res = await fetch('/api/ai/chat', {
         method:'POST',
         headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({ message: txt })
+    body: JSON.stringify({ messages: hist })
       });
       const data = await res.json();
       typing(false);
