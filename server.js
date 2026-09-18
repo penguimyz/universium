@@ -342,7 +342,7 @@ app.post("/api/ai/chat", async (req, res) => {
       { role: "system", content: "You are a quick helpful assistant embedded in Universium, a browser/unblocker app. Keep replies short and direct — 1-3 sentences unless detail is clearly needed. No disclaimers. No bullet lists unless asked. Plain conversational text." },
       ...messages,
     ],
-    stream: false,
+    stream: true,
   });
   const target = new URL(`${OLLAMA_HOST}/api/chat`);
 
@@ -353,32 +353,52 @@ app.post("/api/ai/chat", async (req, res) => {
       path: target.pathname,
       method: "POST",
       agent: ollamaAgent,
+      timeout: 120000, // 2 min ceiling — cold model loads can take 30s+
       headers: {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(payload),
       },
     },
     (upstreamRes) => {
-      let body = "";
-      upstreamRes.on("data", (chunk) => (body += chunk));
+      if (upstreamRes.statusCode !== 200) {
+        let errBody = "";
+        upstreamRes.on("data", (c) => (errBody += c));
+        upstreamRes.on("end", () => {
+          console.error("Ollama upstream error:", upstreamRes.statusCode, errBody);
+          if (!res.headersSent) res.status(502).json({ error: "Ollama error", detail: errBody });
+        });
+        return;
+      }
+
+      // Ollama streams newline-delimited JSON chunks; accumulate message.content
+      // from each chunk and reassemble the full reply once done:true arrives.
+      let buffer = "";
+      let fullText = "";
+      upstreamRes.on("data", (chunk) => {
+        buffer += chunk.toString();
+        let lines = buffer.split("\n");
+        buffer = lines.pop(); // keep incomplete last line for next chunk
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const obj = JSON.parse(line);
+            if (obj.message?.content) fullText += obj.message.content;
+          } catch { /* ignore partial/malformed line */ }
+        }
+      });
       upstreamRes.on("end", () => {
-        if (upstreamRes.statusCode !== 200) {
-          console.error("Ollama upstream error:", upstreamRes.statusCode, body);
-          return res.status(502).json({ error: "Ollama error", detail: body });
-        }
-        try {
-          const data = JSON.parse(body);
-          res.json({ response: data.message?.content, model: data.model });
-        } catch (e) {
-          res.status(502).json({ error: "Bad response from Ollama", detail: body });
-        }
+        if (!res.headersSent) res.json({ response: fullText, model });
       });
     }
   );
 
+  upstreamReq.on("timeout", () => {
+    upstreamReq.destroy(new Error("Ollama request timed out"));
+  });
+
   upstreamReq.on("error", (err) => {
     console.error("Ollama proxy error:", err.message);
-    res.status(502).json({ error: "Unable to reach Ollama", detail: err.message });
+    if (!res.headersSent) res.status(502).json({ error: "Unable to reach Ollama", detail: err.message });
   });
 
   upstreamReq.write(payload);
