@@ -2801,18 +2801,15 @@ document.getElementById('home-inp').addEventListener('keydown',   e => { if (e.k
     hist.push({ role:'user', content: txt });
     typing(true);
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+      const res = await fetch('/api/ai/chat', {
         method:'POST',
         headers:{ 'Content-Type':'application/json' },
-        body: JSON.stringify({
-          model:'claude-sonnet-4-6', max_tokens:512,
-          system: SYS, messages: hist
-        })
+        body: JSON.stringify({ message: txt })
       });
       const data = await res.json();
       typing(false);
-      const reply = data?.content?.[0]?.text || (data?.error ? 'Error: ' + data.error.message : 'No response.');
-      if (data?.content?.[0]) hist.push({ role:'assistant', content: reply });
+      const reply = data?.response || (data?.error ? 'Error: ' + data.error : 'No response.');
+      if (data?.response) hist.push({ role:'assistant', content: reply });
       if (hist.length > 24) hist = hist.slice(-24);
       addMsg('bot', reply);
     } catch(e) {
