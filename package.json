@@ -12,7 +12,7 @@
     "@titaniumnetwork-dev/ultraviolet": "^3.2.10",
     "@tomphttp/bare-server-node": "^2.0.6",
     "express": "^4.21.2",
-    "wisp-server-node": "^1.1.8"
+    "wisp-server-node": "^1.1.8",
     "socks-proxy-agent": "^8.0.4"
   }
 }
