@@ -7,7 +7,7 @@ if [ -n "$TAILSCALE_AUTHKEY" ]; then
   if ! command -v tailscaled >/dev/null 2>&1; then
     echo "[start] tailscaled isn't installed in this image; is Railway building from the Dockerfile?"
   else
-    STATE_DIR=/data/tailscale
+    STATE_DIR="${DATA_DIR:-${RAILWAY_VOLUME_MOUNT_PATH:-/data}}/tailscale"
     mkdir -p "$STATE_DIR" 2>/dev/null || STATE_DIR=/tmp/tailscale
     mkdir -p "$STATE_DIR"
     tailscaled --tun=userspace-networking --state="$STATE_DIR/tailscaled.state" --socks5-server=localhost:1055 &

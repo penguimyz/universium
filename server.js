@@ -19,13 +19,14 @@ import { registerExtras } from "./lib/extras.js";
 import { registerRequests } from "./lib/requests.js";
 import { registerAccounts } from "./lib/accounts.js";
 import { registerAdmin } from "./lib/admin.js";
+import { dataDir, isPersistent } from "./lib/datadir.js";
 const { createBareServer } = barePkg;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const bare = createBareServer("/bare/");
 const app = express();
 // Bump on each release; shown in Settings so you can tell which build is live.
-const VERSION = "2026.09.29-6";
+const VERSION = "2026.09.29-7";
 const STARTED_AT = Date.now();
 app.disable("x-powered-by");
 
@@ -692,4 +693,7 @@ server.on("upgrade", (req, socket, head) => {
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`Universium listening on port ${PORT}`);
+  console.log(isPersistent()
+    ? `[data] saving accounts and requests to ${dataDir(__dirname)} (persistent)`
+    : `[data] WARNING: saving to ${dataDir(__dirname)}, which is wiped on every deploy. Attach a Railway volume to keep accounts.`);
 });

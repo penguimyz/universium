@@ -37,6 +37,7 @@
             ${card('Uptime', dur(d.uptime), `Version ${esc(d.version)}`)}
           </div>
           <div class="adm-ai ${d.ai?.ok ? 'ok' : 'bad'}"><i></i><div><b>Chat assistant: ${d.ai?.ok ? 'online' : 'offline'}</b><span>${esc(d.ai?.message || '')}${d.ai?.hint ? ' ' + esc(d.ai.hint) : ''}</span></div></div>
+          <div class="adm-ai ${d.storage?.persistent ? 'ok' : 'bad'}"><i></i><div><b>Storage: ${d.storage?.persistent ? 'saved on a volume' : 'NOT persistent'}</b><span>${d.storage?.persistent ? 'Accounts and requests survive redeploys (' + esc(d.storage.dir) + ').' : 'Accounts and requests are wiped on every deploy. Attach a Railway volume.'}</span></div></div>
           ${d.announcement ? `<div class="adm-note">Current announcement: “${esc(d.announcement.text)}”</div>` : ''}`);
       } else if (tab === 'users') {
         const d = await api('/api/admin/users?q=' + encodeURIComponent(q));
