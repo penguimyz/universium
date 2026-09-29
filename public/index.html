@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://www.google.com">
 <link rel="preconnect" href="https://cdn.cloudflare.steamstatic.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&display=swap">
-<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="app.css?v=2026.09.29-3">
 <script>
   // Apply the saved sidebar state before first paint so it doesn't jump.
   try { if (JSON.parse(localStorage.getItem('uos-cfg') || '{}').railOpen === false) document.documentElement.classList.add('rail-collapsed'); } catch {}
@@ -20,7 +20,6 @@
 </head>
 <body data-view="home">
 <canvas id="bg" aria-hidden="true"></canvas>
-<div class="grain" aria-hidden="true"></div>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
@@ -68,10 +67,18 @@
     <symbol id="i-undo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-3"/></symbol>
     <symbol id="i-timer" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></symbol>
     <symbol id="i-heart" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></symbol>
+    <symbol id="i-heart-fill" viewBox="0 0 24 24" fill="currentColor"><path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/></symbol>
     <symbol id="i-box" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/></symbol>
     <symbol id="i-up" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 15 6-6 6 6"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
     <symbol id="i-sidebar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M9 4v16"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3 4.5 6v6c0 4.5 3.2 7.6 7.5 9 4.3-1.4 7.5-4.5 7.5-9V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.8a3.5 3.5 0 0 1 0 6.4M18 14.8c2 .8 3.2 2.6 3.6 5.2"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h10"/></symbol>
+    <symbol id="i-block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/></symbol>
+    <symbol id="i-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></symbol>
+    <symbol id="i-max" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+    <symbol id="i-min" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 12h12"/></symbol>
     <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>
     <!-- Logo: a ringed planet. The ring's front arc is cut out of the planet so it reads at 16px. -->
     <symbol id="mark" viewBox="0 0 48 48">
@@ -98,6 +105,7 @@
     <button class="rail-btn" data-nav="games" onclick="openGames()"><svg><use href="#i-games"/></svg><span class="rail-label">Games</span></button>
     <button class="rail-btn" data-nav="movies" onclick="openMovies()"><svg><use href="#i-film"/></svg><span class="rail-label">Movies &amp; TV</span></button>
     <button class="rail-btn" data-nav="assistant" onclick="openAssistant()"><svg><use href="#i-chat"/></svg><span class="rail-label">Chat</span></button>
+    <button class="rail-btn" data-nav="friends" onclick="openFriends()"><svg><use href="#i-users"/></svg><span class="rail-label">Friends</span><span class="badge" data-badge="friends" hidden></span></button>
     <button class="rail-btn" data-nav="history" onclick="openHistory()"><svg><use href="#i-history"/></svg><span class="rail-label">History</span></button>
     <div class="rail-spacer"></div>
     <button class="rail-btn desk" onclick="openBlank()"><svg><use href="#i-eye"/></svg><span class="rail-label">Open in about:blank</span></button>
@@ -184,30 +192,46 @@
               </div>
               <button class="btn primary" onclick="openRequest()"><svg class="btn-ico"><use href="#i-flag"/></svg>Request a game</button>
             </div>
+            <section class="vote-card" id="requests-section">
+              <div class="vote-head">
+                <div><h2><svg><use href="#i-flag"/></svg>Vote on what's next</h2><p>The most-wanted requests get added first.</p></div>
+                <div class="vote-actions">
+                  <button class="link-btn" id="req-toggle" onclick="toggleAllRequests()" hidden>See all</button>
+                  <button class="btn" onclick="openRequest()">Request</button>
+                </div>
+              </div>
+              <div class="requests" id="requests"></div>
+            </section>
+
             <div class="filters">
-              <label class="filter-search"><svg><use href="#i-search"/></svg><input id="game-q" type="search" placeholder="Search favorites and extras" autocomplete="off" aria-label="Find a game"></label>
+              <label class="filter-search"><svg><use href="#i-search"/></svg><input id="game-q" type="search" placeholder="Search all games" autocomplete="off" aria-label="Find a game"></label>
               <div id="tag-chips" class="chips"></div>
             </div>
 
-            <div class="section-head big"><h2 class="section-title"><svg><use href="#i-heart"/></svg>Favorites <span class="count" id="fav-count"></span></h2></div>
-            <div class="game-grid" id="game-grid"></div>
-
-            <div class="section">
-              <div class="section-head big">
-                <h2 class="section-title"><svg><use href="#i-box"/></svg>Extras <span class="count" id="extras-count"></span></h2>
-                <span class="section-note">From <a href="#" onclick="event.preventDefault(); go('https://github.com/codeonline26/html')">codeonline26/html</a></span>
-              </div>
-              <div class="game-grid extras-grid" id="extras-grid"></div>
-              <button class="btn more-btn" id="extras-more" hidden onclick="showMoreExtras()">Show more</button>
+            <div class="gsec" data-sec="fav">
+              <button class="gsec-head" onclick="toggleSection('fav')" aria-expanded="true">
+                <svg class="chev"><use href="#i-down"/></svg><svg class="ico"><use href="#i-heart"/></svg><span>Favorites</span><span class="count" id="fav-count"></span>
+                <em class="gsec-note">Tap the heart on any game to add or remove it</em>
+              </button>
+              <div class="gsec-body"><div class="game-grid" id="game-grid"></div></div>
             </div>
 
-            <div class="section" id="requests-section">
-              <div class="section-head big">
-                <h2 class="section-title"><svg><use href="#i-flag"/></svg>Requested games</h2>
-                <button class="link-btn" onclick="openRequest()">Request one</button>
+            <div class="gsec" data-sec="more" id="more-sec">
+              <button class="gsec-head" onclick="toggleSection('more')" aria-expanded="true">
+                <svg class="chev"><use href="#i-down"/></svg><svg class="ico"><use href="#i-games"/></svg><span>More games</span><span class="count" id="more-count"></span>
+              </button>
+              <div class="gsec-body"><div class="game-grid" id="more-grid"></div></div>
+            </div>
+
+            <div class="gsec" data-sec="extras" id="extras-sec">
+              <button class="gsec-head" onclick="toggleSection('extras')" aria-expanded="true">
+                <svg class="chev"><use href="#i-down"/></svg><svg class="ico"><use href="#i-box"/></svg><span>Extras</span><span class="count" id="extras-count"></span>
+                <em class="gsec-note">From codeonline26/html</em>
+              </button>
+              <div class="gsec-body">
+                <div class="game-grid extras-grid" id="extras-grid"></div>
+                <button class="btn more-btn" id="extras-more" hidden onclick="showMoreExtras()">Show more</button>
               </div>
-              <p class="section-sub">Vote for what should be added next. The most wanted ones go first.</p>
-              <div class="requests" id="requests"></div>
             </div>
           </div>
         </div>
@@ -227,16 +251,22 @@
         </div>
       </section>
 
+      <!-- FRIENDS -->
+      <section class="fslot" id="slot-friends">
+        <div class="friends-page" id="friends-root"></div>
+      </section>
+
       <!-- MOVIES -->
       <section class="fslot" id="slot-movies">
         <div class="player-bar">
           <span class="player-title">Movies &amp; TV</span>
           <button class="bar-btn" onclick="reloadTab()"><svg><use href="#i-reload"/></svg><span class="lbl">Reload</span></button>
-          <button class="bar-btn" onclick="openBlank('/movies.html')"><svg><use href="#i-eye"/></svg><span class="lbl">about:blank</span></button>
+          <button class="bar-btn" id="shield-btn" onclick="toggleShield()" title="Blocks pop-up ads and redirects. Turn off if a player won't load."><svg><use href="#i-shield"/></svg><span class="lbl">Ad shield: On</span></button>
+          <button class="bar-btn" onclick="moviesBlank()"><svg><use href="#i-eye"/></svg><span class="lbl">about:blank</span></button>
           <button class="bar-btn" onclick="fsEl(document.getElementById('movies-frame'))"><svg><use href="#i-full"/></svg><span class="lbl">Fullscreen</span></button>
         </div>
         <div class="stage" id="movies-stage">
-          <iframe id="movies-frame" class="pf" title="Movies" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+          <iframe id="movies-frame" class="pf" title="Movies" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
         </div>
       </section>
 
@@ -245,6 +275,7 @@
         <div class="scroll" id="chat-scroll">
           <div class="chat" id="ai-msgs">
             <div class="chat-empty" id="chat-empty">
+              <div class="ai-status" id="ai-status"></div>
               <h2>What do you need?</h2>
               <p>It's a small model, so it's best at quick questions: explaining something, checking work, or wording a message.</p>
               <div class="suggest">
@@ -335,6 +366,11 @@
   <button role="menuitem" data-act="close"><svg><use href="#i-x"/></svg>Close<kbd>Alt W</kbd></button>
 </div>
 
+<div class="menu" id="menu-friend" role="menu" hidden>
+  <button role="menuitem" data-fact="remove"><svg><use href="#i-x"/></svg>Remove friend</button>
+  <button role="menuitem" data-fact="block"><svg><use href="#i-block"/></svg>Block</button>
+</div>
+
 <div class="suggest-box" id="suggest-box" role="listbox" hidden></div>
 
 <!-- Request a game -->
@@ -369,6 +405,12 @@
         <div class="row-label"><b>Accent</b></div>
         <div class="swatches" id="swatches"></div>
       </div>
+      <div class="row-label" style="margin-top:14px"><b>Background</b></div>
+      <div class="bg-picker" id="bg-picker"></div>
+      <div class="row">
+        <div class="row-label"><b>Desktop mode</b><small>Taskbar, start menu and windows, like a real PC</small></div>
+        <button class="switch" role="switch" id="sw-desktop" onclick="togSetting('desktop')" aria-label="Desktop mode"></button>
+      </div>
       <div class="row">
         <div class="row-label"><b>Animated background</b><small>Reacts to your mouse. Turn off to save battery.</small></div>
         <button class="switch" role="switch" id="sw-motion" onclick="togSetting('motion')" aria-label="Animated background"></button>
@@ -381,6 +423,11 @@
         <div class="row-label"><b>Expanded sidebar</b><small>Show labels next to the icons</small></div>
         <button class="switch" role="switch" id="sw-railOpen" onclick="toggleRail()" aria-label="Expanded sidebar"></button>
       </div>
+    </div>
+
+    <div class="group">
+      <div class="group-title">Account</div>
+      <div id="account-settings"></div>
     </div>
 
     <div class="group">
@@ -460,7 +507,7 @@
     </div>
   </div>
   <div class="sheet-foot">
-    <span>Saved in this browser only.</span>
+    <span>Saved in this browser only. <span id="app-version"></span></span>
     <button class="btn ghost danger" onclick="resetAll()">Reset everything</button>
   </div>
 </aside>
@@ -472,8 +519,10 @@
 <script src="/uv/uv.config.js" defer onerror="window._uvFail=true"></script>
 <script src="/baremux/index.js" defer onerror="window._uvFail=true"></script>
 
-<script src="sfx.js"></script>
-<script src="bg.js"></script>
-<script src="app.js"></script>
+<script src="sfx.js?v=2026.09.29-3"></script>
+<script src="bg.js?v=2026.09.29-3"></script>
+<script src="app.js?v=2026.09.29-3"></script>
+<script src="social.js?v=2026.09.29-3"></script>
+<script src="desktop.js?v=2026.09.29-3"></script>
 </body>
 </html>

@@ -8,6 +8,7 @@ import express from "express";
 import compression from "compression";
 import { gzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
+import { execFile } from "node:child_process";
 import { uvPath } from "@titaniumnetwork-dev/ultraviolet";
 import { epoxyPath } from "@mercuryworkshop/epoxy-transport";
 import { baremuxPath } from "@mercuryworkshop/bare-mux/node";
@@ -16,6 +17,7 @@ import barePkg from "@tomphttp/bare-server-node";
 import { SocksProxyAgent } from "socks-proxy-agent";
 import { registerExtras } from "./lib/extras.js";
 import { registerRequests } from "./lib/requests.js";
+import { registerAccounts } from "./lib/accounts.js";
 const { createBareServer } = barePkg;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -28,6 +30,7 @@ app.disable("x-powered-by");
 app.use(compression({
   filter: (req, res) =>
     !req.path.startsWith("/cdn-proxy/") &&
+    req.path !== "/api/events" && // live stream: compression would buffer it
     !/^\/games\/[^/]+\.html$/.test(req.path) &&
     compression.filter(req, res),
 }));
@@ -427,6 +430,65 @@ app.use(express.json({ limit: "200kb" }));
 // ── Extras (games from a GitHub repo) and game requests ─────────────────────
 registerExtras(app, { proxyFile, swSuppressor: SW_SUPPRESSOR });
 registerRequests(app, { rootDir: __dirname });
+registerAccounts(app, { rootDir: __dirname });
+
+// ── AI status: works out exactly which link in the chain is broken ──────────
+// Railway → (Tailscale SOCKS on :1055) → your PC over the tailnet → Ollama :11434 → model.
+function tailscaleState() {
+  return new Promise(resolve => {
+    execFile("tailscale", ["status", "--json"], { timeout: 4000 }, (err, stdout) => {
+      if (err && err.code === "ENOENT") return resolve({ installed: false });
+      try { const j = JSON.parse(stdout); resolve({ installed: true, state: j.BackendState, self: j.Self?.TailscaleIPs?.[0] }); }
+      catch { resolve({ installed: true, state: "Unknown" }); }
+    });
+  });
+}
+function ollamaTags() {
+  return new Promise(resolve => {
+    const t = new URL(`${OLLAMA_HOST}/api/tags`);
+    const r = httpRequest({ hostname: t.hostname, port: t.port || 80, path: t.pathname, agent: ollamaAgent, timeout: 8000 }, up => {
+      let body = ""; up.on("data", c => body += c);
+      up.on("end", () => { try { resolve({ ok: up.statusCode === 200, status: up.statusCode, models: (JSON.parse(body).models || []).map(m => m.name) }); } catch { resolve({ ok: false, status: up.statusCode }); } });
+    });
+    r.on("timeout", () => r.destroy(new Error("timeout")));
+    r.on("error", e => resolve({ ok: false, error: e.message || String(e), code: e.code }));
+    r.end();
+  });
+}
+let aiStatusCache = null;
+async function aiStatus() {
+  if (aiStatusCache && Date.now() - aiStatusCache.at < 15000) return aiStatusCache.value;
+  const model = process.env.OLLAMA_MODEL || "deepseek-r1:7b";
+  const host = new URL(OLLAMA_HOST).hostname;
+  let v;
+  const ts = await tailscaleState();
+  if (!ts.installed) v = { ok: false, step: "tailscale", message: "Tailscale isn't installed on the server.", hint: "Railway has to build from the Dockerfile. Check railway.json says builder DOCKERFILE and redeploy." };
+  else if (!process.env.TAILSCALE_AUTHKEY) v = { ok: false, step: "tailscale", message: "TAILSCALE_AUTHKEY isn't set on Railway.", hint: "Add it under your service's Variables, then redeploy." };
+  else if (ts.state !== "Running") v = { ok: false, step: "tailscale", message: `Tailscale on the server isn't connected (state: ${ts.state || "unknown"}).`, hint: "The auth key may be expired or already used. Make a new reusable key and update TAILSCALE_AUTHKEY." };
+  else {
+    const o = await ollamaTags();
+    const err = (o.error || "").toLowerCase();
+    if (o.ok) {
+      const has = o.models.some(m => m === model || m === model + ":latest" || m.split(":")[0] === model);
+      v = has ? { ok: true, step: "ready", message: `Connected to ${model}.` }
+              : { ok: false, step: "model", message: `Ollama is reachable, but ${model} isn't installed on it.`, hint: `On the PC run: ollama pull ${model}. Installed: ${o.models.join(", ") || "none"}.` };
+    } else if (err.includes("connectionrefused") || err.includes("refused") && !err.includes("1055")) {
+      v = { ok: false, step: "ollama", message: `Your PC (${host}) is reachable, but nothing is answering on port 11434.`, hint: "Ollama is either closed or only listening to itself. Set OLLAMA_HOST=0.0.0.0 on the PC, quit Ollama from the tray, and open it again." };
+    } else if (err.includes("1055") || o.code === "ECONNREFUSED") {
+      v = { ok: false, step: "tailscale", message: "The server's Tailscale proxy isn't running.", hint: "Check the Railway logs for [start] tailscale lines." };
+    } else if (err.includes("unreachable") || err.includes("timeout") || err.includes("ttl")) {
+      v = { ok: false, step: "pc", message: `The server can't reach your PC at ${host}.`, hint: "Make sure the PC is on and awake, Tailscale is connected on it, and that its Tailscale IP is still " + host + ". Also allow port 11434 in Windows Firewall." };
+    } else {
+      v = { ok: false, step: "unknown", message: "Couldn't reach Ollama: " + (o.error || "HTTP " + o.status), hint: "Check the Railway logs." };
+    }
+  }
+  aiStatusCache = { at: Date.now(), value: v };
+  return v;
+}
+app.get("/api/ai/status", async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  try { res.json(await aiStatus()); } catch (e) { res.json({ ok: false, step: "unknown", message: e.message }); }
+});
 
 app.post("/api/ai/chat", async (req, res) => {
   const { messages } = req.body;
@@ -467,6 +529,7 @@ app.post("/api/ai/chat", async (req, res) => {
         upstreamRes.on("data", (c) => (errBody += c));
         upstreamRes.on("end", () => {
           console.error("Ollama upstream error:", upstreamRes.statusCode, errBody);
+          aiStatusCache = null;
           if (!res.headersSent) res.status(502).json({ error: "Ollama error", detail: errBody });
         });
         return;
@@ -502,6 +565,7 @@ app.post("/api/ai/chat", async (req, res) => {
 
   upstreamReq.on("error", (err) => {
     console.error("Ollama proxy error:", err.message);
+    aiStatusCache = null;
     if (!res.headersSent) res.status(502).json({ error: "Unable to reach Ollama", detail: err.message });
   });
 
@@ -535,7 +599,9 @@ app.use(express.static(join(__dirname, "public"), {
   // index.html must revalidate so UI updates show up immediately.
   setHeaders: (res, path) => { if (path.endsWith(".html")) res.setHeader("Cache-Control", "no-cache"); },
 }));
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+// Bump on each release; shown in Settings so you can tell which build is live.
+const VERSION = "2026.09.29-3";
+app.get("/api/health", (_req, res) => res.json({ ok: true, version: VERSION }));
 // Unknown page paths get the app; missing files (anything with an extension, or under
 // /games, /api, /extras) get a real 404 so games don't try to parse HTML as data.
 app.get("*", (req, res) => {

@@ -70,7 +70,7 @@ const EXTRAS_PAGE = 48;
 /* ═══════════════ State ═══════════════ */
 const cfg = Object.assign(
   { cloak: false, cloakName: 'Home', logoURL: '', adblock: true, accent: ACCENTS[0], engine: 'ddg', hiddenDefaults: [],
-    motion: true, sound: true, bookmarksBar: true, railOpen: true },
+    motion: true, sound: true, bookmarksBar: true, railOpen: true, desktop: false, bgScene: 'rings', moviesShield: true, collapsed: {} },
   store.get('uos-cfg', {}) || {}
 );
 const app = {
@@ -83,6 +83,8 @@ const app = {
   gameFilter: { q: '', tag: 'All' },
   extras: null, extrasShown: EXTRAS_PAGE, extrasErr: '',
   frameZoom: {},
+  favs: store.get('uos-favs', null) || GAMES.map(g => g.id),
+  reqAll: false, reqList: [],
 };
 const saveCfg = () => store.set('uos-cfg', cfg);
 sfx.enabled = cfg.sound !== false;
@@ -205,6 +207,7 @@ function showView(id) {
   renderTabs();
   renderBookmarksBar();
   window.bg?.kick();
+  window.desktop?.sync();
 }
 
 function nav(fn) { return (...a) => { const before = app.active; fn(...a); if (app.active !== before) sfx.nav(); }; }
@@ -338,6 +341,7 @@ function renderTabs() {
     </div>`).join('');
   app.tabs.forEach(t => { t.fresh = false; });
   bar.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  window.desktop?.renderRunning?.();
 }
 $('tabs').addEventListener('click', e => {
   const x = e.target.closest('[data-close]');
@@ -608,7 +612,10 @@ function toggleClickerPanel(force) {
   if (open) {
     if (!activeFrame() || !['tab', 'game'].includes(viewKind(app.active))) { toast('Open a site or game first, then use the auto clicker'); return; }
     p.hidden = false; restart(p, 'enter'); sfx.open();
-  } else { p.hidden = true; cancelPick(); sfx.shut(); }
+  } else {
+    p.hidden = true; cancelPick(); sfx.shut();
+    const f = activeFrame(); if (f && viewKind(app.active) === 'game') { try { f.focus(); f.contentWindow?.focus(); } catch {} }
+  }
 }
 
 document.querySelector('.seg').addEventListener('click', e => {
@@ -705,11 +712,36 @@ function schedule() {
   }, interval);
 }
 
+// Games like Minecraft capture the mouse (pointer lock) when clicked. Browsers only allow that
+// after a real click, so fake clicks make the game ask over and over, fail, and get stuck between
+// its pause menu and "grabbing" the mouse, which also swallows the keyboard. While the auto
+// clicker runs, lock requests without a real user gesture are ignored. Everything is restored on stop.
+function guardPointerLock(win, on) {
+  const visit = w => {
+    try {
+      const proto = w.Element.prototype;
+      if (on && !proto.__uosOrigLock) {
+        proto.__uosOrigLock = proto.requestPointerLock;
+        proto.requestPointerLock = function (...a) {
+          if (w.navigator.userActivation && !w.navigator.userActivation.isActive) return Promise.resolve();
+          return proto.__uosOrigLock.apply(this, a);
+        };
+      } else if (!on && proto.__uosOrigLock) {
+        proto.requestPointerLock = proto.__uosOrigLock;
+        delete proto.__uosOrigLock;
+      }
+      w.document.querySelectorAll('iframe').forEach(f => { try { visit(f.contentWindow); } catch {} });
+    } catch {}
+  };
+  visit(win);
+}
+
 function startClicking() {
   const f = activeFrame();
   if (!f || !frameDoc(f)) return toast("The auto clicker can't reach this page", 'err');
   if (clicker.mode === 'spot' && (!clicker.spot || clicker.frame !== f)) { toggleClickerPanel(true); return pickSpot(); }
   clicker.frame = f; clicker.running = true; clicker.count = 0;
+  guardPointerLock(f.contentWindow, true);
   if (clicker.mode === 'follow') {
     const doc = frameDoc(f);
     clicker.follow = null;
@@ -725,7 +757,15 @@ function stopClicking(msg) {
   if (!clicker.running) return;
   clearInterval(clicker.timer);
   clicker.running = false;
-  try { const d = frameDoc(clicker.frame); d?.removeEventListener('mousemove', clicker._move, true); d?.removeEventListener('mouseleave', clicker._leave, true); } catch {}
+  const f = clicker.frame;
+  try { const d = frameDoc(f); d?.removeEventListener('mousemove', clicker._move, true); d?.removeEventListener('mouseleave', clicker._leave, true); } catch {}
+  try {
+    // Release any "held" button the game may think is down, then give the game its keyboard back.
+    const d = frameDoc(f), pt = clicker.mode === 'follow' ? clicker.follow : clicker.spot;
+    if (d && pt) { const el = d.elementFromPoint(pt.x, pt.y); const W = d.defaultView; el?.dispatchEvent(new W.MouseEvent('mouseup', { bubbles: true, clientX: pt.x, clientY: pt.y, button: 0, buttons: 0 })); }
+    guardPointerLock(f.contentWindow, false);
+    if (viewKind(app.active) === 'game') { f.focus(); f.contentWindow?.focus(); }
+  } catch {}
   clickerStatus(msg); updateToolbar(); sfx.close();
   toast(msg || `Auto clicker off · ${clicker.count.toLocaleString()} clicks`);
 }
@@ -945,21 +985,11 @@ function greet() {
   $('greet').textContent = h < 5 ? 'Up late?' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : h < 22 ? 'Good evening' : 'Up late?';
 }
 
-// Each letter is its own span: tinted along a white→accent gradient, hops on hover.
+// One text run with a slow color sweep (CSS); no per-letter animation.
 function buildWordmark() {
-  const word = 'universium', el = $('wordmark');
-  const [r, g, b] = hexRgb(cfg.accent || ACCENTS[0]);
-  el.innerHTML = [...word].map((ch, i) => {
-    const t = i / (word.length - 1) * 0.85;
-    const c = `rgb(${Math.round(255 + (r - 255) * t)},${Math.round(255 + (g - 255) * t)},${Math.round(255 + (b - 255) * t)})`;
-    return `<span class="ch" style="--i:${i};color:${c}" aria-hidden="true">${ch}</span>`;
-  }).join('') + '<span class="dot" aria-hidden="true"></span>';
+  if (!$('wordmark').firstChild) $('wordmark').innerHTML = '<span class="word">universium</span><span class="dot" aria-hidden="true"></span>';
 }
 const hexRgb = h => { const n = parseInt(h.replace('#', ''), 16); return [n >> 16 & 255, n >> 8 & 255, n & 255]; };
-$('wordmark').addEventListener('pointerover', e => {
-  const ch = e.target.closest('.ch'); if (!ch || ch.classList.contains('hop')) return;
-  restart(ch, 'hop'); setTimeout(() => ch.classList.remove('hop'), 600);
-});
 
 function allLinks() {
   const hidden = new Set(cfg.hiddenDefaults || []);
@@ -1061,41 +1091,83 @@ function coverImg(g, small) {
   return `<img class="fg" src="${src}" alt="" loading="lazy" decoding="async" data-name="${nm}" onerror="coverFail(this)">`;
 }
 function gameCard(g, i = 0) {
+  const fav = app.favs.includes(g.id);
   return `<button class="game" data-game="${esc(g.id)}" style="--i:${Math.min(i, 16)}">
-    <div class="cover">${coverImg(g)}<span class="play-pill">${svg('i-play')}Play</span></div>
+    <div class="cover">${coverImg(g)}<span class="play-pill">${svg('i-play')}Play</span>
+      <span class="fav-btn${fav ? ' on' : ''}" role="button" tabindex="0" data-fav="${esc(g.id)}" aria-pressed="${fav}" aria-label="${fav ? 'Remove from' : 'Add to'} favorites" title="${fav ? 'Remove from favorites' : 'Add to favorites'}">${svg(fav ? 'i-heart-fill' : 'i-heart')}</span>
+    </div>
     <div class="game-meta"><span class="game-name">${esc(g.name)}</span><span class="game-tag">${esc(g.tag || 'Extra')}</span></div>
     ${g.desc ? `<p class="game-desc">${esc(g.desc)}</p>` : ''}
   </button>`;
 }
-function findGame(id) { return GAMES.find(g => g.id === id) || app.extras?.find(g => g.id === id); }
-function onGameClick(e) { const c = e.target.closest('[data-game]'); if (c) launchGame(findGame(c.dataset.game)); }
-['game-grid', 'home-games', 'extras-grid'].forEach(id => $(id).addEventListener('click', onGameClick));
+function findGame(id) { return GAMES.find(g => g.id === id) || app.extras?.find(g => g.id === id) || app.recent.find(r => r.game?.id === id)?.game; }
+function onGameClick(e) {
+  const f = e.target.closest('[data-fav]');
+  if (f) { e.preventDefault(); e.stopPropagation(); return toggleFav(f.dataset.fav, f); }
+  const c = e.target.closest('[data-game]'); if (c) launchGame(findGame(c.dataset.game));
+}
+['game-grid', 'more-grid', 'home-games', 'extras-grid'].forEach(id => {
+  $(id).addEventListener('click', onGameClick);
+  $(id).addEventListener('keydown', e => { const f = e.target.closest('[data-fav]'); if (f && (e.key === 'Enter' || e.key === ' ')) onGameClick(e); });
+});
+
+/* Favorites: starts as the hand-picked list; heart or un-heart any game (extras too). */
+function toggleFav(id, el) {
+  const on = !app.favs.includes(id);
+  app.favs = on ? [...app.favs, id] : app.favs.filter(x => x !== id);
+  store.set('uos-favs', app.favs);
+  if (el) { el.classList.toggle('on', on); el.innerHTML = svg(on ? 'i-heart-fill' : 'i-heart'); restart(el, 'pop'); }
+  on ? sfx.pop() : sfx.close();
+  toast(on ? 'Added to favorites' : 'Removed from favorites');
+  setTimeout(() => { renderGameGrid(); renderHomeGames(); }, el ? 260 : 0);
+}
+const favGames = () => app.favs.map(findGame).filter(Boolean);
 
 function renderHomeGames() {
-  $('home-games').innerHTML = GAMES.slice(0, 8).map(gameCard).join('');
+  const list = favGames().slice(0, 8);
+  $('home-games').innerHTML = list.length ? list.map(gameCard).join('') : `<p class="empty">Heart some games and they'll show up here.</p>`;
   $('home-games').querySelectorAll('.game-desc').forEach(p => p.remove());
+}
+
+/* Collapsible sections, remembered per browser. */
+function toggleSection(name, force) {
+  cfg.collapsed = cfg.collapsed || {};
+  cfg.collapsed[name] = force ?? !cfg.collapsed[name];
+  saveCfg(); applySections(); sfx.tick();
+}
+function applySections() {
+  document.querySelectorAll('.gsec').forEach(sec => {
+    const c = !!cfg.collapsed?.[sec.dataset.sec];
+    sec.classList.toggle('collapsed', c);
+    sec.querySelector('.gsec-head').setAttribute('aria-expanded', String(!c));
+  });
 }
 
 function matches(g, needle) { return !needle || (g.name + ' ' + (g.tag || '') + ' ' + (g.desc || '')).toLowerCase().includes(needle); }
 function renderGameGrid() {
   const { q, tag } = app.gameFilter;
   const needle = q.toLowerCase();
-  const list = GAMES.filter(g => (tag === 'All' || g.tag === tag) && matches(g, needle));
-  $('game-grid').innerHTML = list.length ? list.map(gameCard).join('') : `<p class="empty" style="grid-column:1/-1">No favorites match "${esc(q)}".</p>`;
-  $('fav-count').textContent = list.length;
+  const pass = g => (tag === 'All' || g.tag === tag) && matches(g, needle);
+  const favs = favGames().filter(pass);
+  const more = GAMES.filter(g => !app.favs.includes(g.id) && pass(g));
+  $('game-grid').innerHTML = favs.length ? favs.map(gameCard).join('')
+    : `<p class="empty" style="grid-column:1/-1">${q || tag !== 'All' ? 'No favorites match.' : 'No favorites yet. Tap the heart on any game.'}</p>`;
+  $('fav-count').textContent = favs.length;
+  $('more-grid').innerHTML = more.map(gameCard).join('');
+  $('more-count').textContent = more.length;
+  $('more-sec').hidden = !more.length;
   const total = GAMES.length + (app.extras?.length || 0);
-  $('games-count').textContent = app.extras ? `${total} games to play, ${GAMES.length} picked as favorites.` : `${GAMES.length} favorites, plus extras.`;
+  $('games-count').textContent = app.extras ? `${total} games to play.` : `${GAMES.length}+ games to play.`;
   $('pill-games').textContent = `${total} games`;
   renderExtras();
 }
 function renderExtras() {
   const grid = $('extras-grid'), more = $('extras-more');
-  const sec = grid.closest('.section');
-  sec.hidden = app.gameFilter.tag !== 'All';
+  $('extras-sec').hidden = app.gameFilter.tag !== 'All';
   if (app.extrasErr) { grid.innerHTML = `<p class="empty" style="grid-column:1/-1">${esc(app.extrasErr)}</p>`; more.hidden = true; $('extras-count').textContent = ''; return; }
   if (!app.extras) { grid.innerHTML = Array.from({ length: 8 }, () => '<div class="game skel"><div class="cover"></div><div class="skel-line"></div></div>').join(''); more.hidden = true; return; }
   const needle = app.gameFilter.q.toLowerCase();
-  const list = app.extras.filter(g => matches(g, needle));
+  const list = app.extras.filter(g => !app.favs.includes(g.id) && matches(g, needle));
   $('extras-count').textContent = list.length;
   grid.innerHTML = list.length ? list.slice(0, app.extrasShown).map(gameCard).join('') : `<p class="empty" style="grid-column:1/-1">No extras match "${esc(app.gameFilter.q)}".</p>`;
   more.hidden = list.length <= app.extrasShown;
@@ -1116,7 +1188,7 @@ async function loadExtras() {
     app.extrasErr = location.protocol === 'file:' ? 'Extras load from the server. Run it with npm start to see them.' : "Couldn't load extras right now. Try again in a bit.";
   }
   loadExtras.busy = false;
-  renderGameGrid();
+  renderGameGrid(); renderHomeGames();
 }
 
 function renderTagChips() {
@@ -1133,7 +1205,7 @@ const openGames = nav(() => {
   stopAllRunningContent();
   const was = app.active;
   showView('games');
-  if (was !== 'games') restart($('game-grid'), 'stagger');
+  if (was !== 'games') ['game-grid', 'more-grid'].forEach(id => restart($(id), 'stagger'));
   loadExtras(); loadRequests();
 });
 
@@ -1208,22 +1280,28 @@ async function loadRequests() {
     if (!r.ok) throw new Error();
     renderRequests((await r.json()).requests || []);
   } catch {
-    box.innerHTML = `<p class="empty">${location.protocol === 'file:' ? 'Requests need the server running.' : "Couldn't load requests right now."}</p>`;
+    box.innerHTML = `<p class="empty small">${location.protocol === 'file:' ? 'Requests need the server running.' : "Couldn't load requests right now."}</p>`;
   }
 }
 function renderRequests(list) {
-  const top = list.slice(0, 30);
-  const max = Math.max(1, ...top.map(r => r.votes));
-  $('requests').innerHTML = top.length ? top.map((r, i) => `
+  app.reqList = list;
+  const shown = app.reqAll ? list.slice(0, 60) : list.slice(0, 5);
+  const max = Math.max(1, ...list.map(r => r.votes));
+  const t = $('req-toggle');
+  t.hidden = list.length <= 5;
+  t.textContent = app.reqAll ? 'Show less' : `See all ${list.length}`;
+  $('requests').innerHTML = shown.length ? shown.map((r, i) => `
     <div class="req${r.status === 'added' ? ' added' : ''}" style="--i:${Math.min(i, 12)}">
-      <button class="vote${r.voted ? ' on' : ''}" data-vote="${esc(r.id)}" ${r.voted || r.status === 'added' ? 'disabled' : ''} aria-label="Vote for ${esc(r.name)}">${svg('i-up')}<b>${r.votes}</b></button>
+      <span class="req-rank">${i + 1}</span>
       <div class="req-body">
         <b>${esc(r.name)}</b>${r.status === 'added' ? '<span class="req-badge">Added</span>' : ''}
         ${r.note ? `<small>${esc(r.note)}</small>` : ''}
         <span class="req-bar"><i style="width:${Math.round(r.votes / max * 100)}%"></i></span>
       </div>
-    </div>`).join('') : `<p class="empty">No requests yet. Be the first.</p>`;
+      <button class="vote${r.voted ? ' on' : ''}" data-vote="${esc(r.id)}" ${r.voted || r.status === 'added' ? 'disabled' : ''} aria-label="Vote for ${esc(r.name)}">${svg('i-up')}<b>${r.votes}</b></button>
+    </div>`).join('') : `<p class="empty small">No requests yet. Be the first.</p>`;
 }
+function toggleAllRequests() { app.reqAll = !app.reqAll; renderRequests(app.reqList || []); sfx.tick(); }
 $('requests').addEventListener('click', async e => {
   const b = e.target.closest('[data-vote]'); if (!b || b.disabled) return;
   b.disabled = true; b.classList.add('on');
@@ -1265,30 +1343,45 @@ async function submitRequest() {
 }
 
 /* ═══════════════ Movies ═══════════════ */
+// streamex.hn, loaded through the proxy. The frame's sandbox has no allow-popups or
+// allow-top-navigation, so the site's pop-under ads and redirects can't escape it.
+const MOVIES_URL = 'https://streamex.hn/';
 let _moviesLoaded = false;
+const moviesProxied = () => __uv$config.prefix + __uv$config.encodeUrl(MOVIES_URL);
 const openMovies = nav(async () => {
   stopAllRunningContent('movies-frame');
   showView('movies');
   if (_moviesLoaded) return;
   _moviesLoaded = true;
   const frame = $('movies-frame');
+  $('movies-notice')?.remove(); frame.hidden = false;
   loadbar(true);
-  try {
-    const r = await fetch('/movies.html', { method: 'HEAD', cache: 'no-store' });
-    if (!r.ok) throw new Error(r.status);
-  } catch {
-    loadbar(false);
-    _moviesLoaded = false;
-    frame.hidden = true;
-    if (!$('movies-notice')) $('movies-stage').insertAdjacentHTML('beforeend', `<div class="notice" id="movies-notice"><h2>Movies isn't set up on this server</h2><p>The streaming page couldn't be found. Whoever runs this site needs to add it back.</p></div>`);
+  const ok = window._uvReady || await Promise.race([uvReady, new Promise(r => setTimeout(() => r(false), 6000))]);
+  if (app.active !== 'movies') { _moviesLoaded = false; return loadbar(false); }
+  if (!ok) {
+    loadbar(false); _moviesLoaded = false; frame.hidden = true;
+    $('movies-stage').insertAdjacentHTML('beforeend', `<div class="notice" id="movies-notice"><h2>Movies needs the proxy</h2><p>The proxy didn't start, so the movie site can't load. Refresh the page and try again.</p></div>`);
     return;
   }
-  frame.hidden = false;
-  $('movies-notice')?.remove();
-  if (app.active !== 'movies') { _moviesLoaded = false; return loadbar(false); }
-  frame.onload = () => { if (!frame.src.endsWith('about:blank')) loadbar(false); };
-  frame.src = '/movies.html';
+  frame.onload = () => { if (!frame.src.endsWith('about:blank')) { loadbar(false); applyFramePrefs(frame); } };
+  frame.src = moviesProxied();
 });
+const SHIELD = 'allow-scripts allow-same-origin allow-forms allow-presentation';
+function applyShield() {
+  const on = cfg.moviesShield !== false, f = $('movies-frame');
+  on ? f.setAttribute('sandbox', SHIELD) : f.removeAttribute('sandbox');
+  const b = $('shield-btn');
+  b.querySelector('.lbl').textContent = 'Ad shield: ' + (on ? 'On' : 'Off');
+  b.classList.toggle('off', !on);
+}
+function toggleShield() {
+  cfg.moviesShield = cfg.moviesShield === false; saveCfg();
+  // The sandbox only applies on the next load, so reload the player.
+  stopFrame($('movies-frame')); _moviesLoaded = false; applyShield();
+  toast(cfg.moviesShield ? 'Ad shield on' : 'Ad shield off. Pop-ups may appear.');
+  sfx.toggle(cfg.moviesShield); openMovies();
+}
+function moviesBlank() { openBlank(window._uvReady ? moviesProxied() : '/'); }
 
 /* ═══════════════ Chat ═══════════════ */
 let chatHist = [], chatBusy = false;
@@ -1319,7 +1412,12 @@ async function aiSend(preset) {
     const data = await res.json().catch(() => ({}));
     pending.remove();
     if (res.ok && data.response) { chatHist.push({ role: 'assistant', content: data.response }); addMsg('bot', data.response); sfx.recv(); }
-    else { chatHist.pop(); addMsg('bot', res.status === 502 ? "The chat server isn't answering right now. Try again in a bit." : 'Something went wrong on the server. Try again.', true); sfx.error(); }
+    else {
+      chatHist.pop();
+      let msg = 'Something went wrong on the server. Try again.';
+      if (res.status === 502) { const v = await checkAI(true); msg = v.ok ? 'The model took too long or errored. Try again.' : `The assistant is offline: ${v.message}${v.hint ? '\n' + v.hint : ''}`; }
+      addMsg('bot', msg, true); sfx.error();
+    }
   } catch {
     pending.remove(); chatHist.pop();
     addMsg('bot', "Couldn't reach the server. Check your connection.", true); sfx.error();
@@ -1332,9 +1430,25 @@ $('ai-input').addEventListener('input', e => { autosize(e.target); $('ai-send').
 $('ai-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); aiSend(); } });
 document.querySelector('.suggest').addEventListener('click', e => { const b = e.target.closest('button'); if (b) aiSend(b.textContent); });
 
+// Asks the server which link (Tailscale, your PC, Ollama, the model) is working.
+async function checkAI(force) {
+  const box = $('ai-status');
+  if (!force && checkAI.last && Date.now() - checkAI.last.at < 20000) return checkAI.last.v;
+  box.className = 'ai-status checking'; box.innerHTML = '<i></i>Checking the assistant…';
+  let v;
+  try { v = await (await fetch('/api/ai/status', { cache: 'no-store' })).json(); }
+  catch { v = { ok: false, message: "Couldn't reach the server.", hint: '' }; }
+  checkAI.last = { at: Date.now(), v };
+  box.className = 'ai-status ' + (v.ok ? 'ok' : 'bad');
+  box.innerHTML = v.ok ? `<i></i>Online · ${esc(v.message.replace(/^Connected to |\.$/g, ''))}`
+    : `<i></i><div><b>Assistant offline: ${esc(v.message)}</b>${v.hint ? `<span>${esc(v.hint)}</span>` : ''}</div>`;
+  return v;
+}
+
 const openAssistant = nav(() => {
   stopAllRunningContent();
   showView('assistant');
+  checkAI();
   setTimeout(() => $('ai-input').focus(), 30);
 });
 
@@ -1392,6 +1506,7 @@ function togSetting(key) {
   if (key === 'cloak') applyIdentity();
   if (key === 'motion') window.bg?.kick();
   if (key === 'bookmarksBar') renderBookmarksBar();
+  if (key === 'desktop') window.desktop?.apply(cfg.desktop);
   if (key === 'adblock') { syncAdblock(); toast(cfg.adblock ? 'Ad blocking on' : 'Ad blocking off'); }
   saveCfg();
 }
@@ -1420,7 +1535,19 @@ function initSettings() {
   $('cloak-name-inp').value = cfg.cloakName || '';
   $('logo-url-inp').value = cfg.logoURL || '';
   $('engine').value = ENGINES[cfg.engine] ? cfg.engine : 'ddg';
-  ['cloak', 'motion', 'sound', 'bookmarksBar', 'railOpen'].forEach(k => setSwitch('sw-' + k, cfg[k]));
+  ['cloak', 'motion', 'sound', 'bookmarksBar', 'railOpen', 'desktop'].forEach(k => setSwitch('sw-' + k, cfg[k]));
+  const BGS = [
+    { id: 'rings', name: 'Rings' }, { id: 'warp', name: 'Warp' }, { id: 'waves', name: 'Waves' },
+    { id: 'nebula', name: 'Nebula' }, { id: 'none', name: 'Still' },
+  ];
+  $('bg-picker').innerHTML = BGS.map(b => `<button class="bg-opt" data-bg="${b.id}" aria-pressed="${cfg.bgScene === b.id}"><span class="bg-prev bg-prev-${b.id}"></span>${b.name}</button>`).join('');
+  $('bg-picker').addEventListener('click', e => {
+    const b = e.target.closest('[data-bg]'); if (!b) return;
+    cfg.bgScene = b.dataset.bg; saveCfg();
+    $('bg-picker').querySelectorAll('[data-bg]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+    window.bg?.setScene(cfg.bgScene); sfx.tick();
+  });
+  window.bg?.setScene(cfg.bgScene);
   setSwitch('sw-adblock', cfg.adblock !== false);
   document.documentElement.classList.toggle('rail-collapsed', !cfg.railOpen);
   applyAccent(cfg.accent || ACCENTS[0]);
@@ -1480,5 +1607,8 @@ renderHomeGames();
 renderTagChips();
 renderGameGrid();
 renderBookmarksBar();
+applySections();
+applyShield();
 showView('home');
 if (canLS && !localStorage.getItem('uos-cfg')) saveCfg();
+fetch('/api/health', { cache: 'no-store' }).then(r => r.json()).then(d => { if (d.version) $('app-version').textContent = '· Version ' + d.version; }).catch(() => {});
