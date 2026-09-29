@@ -12,7 +12,7 @@ window.bg = (() => {
   const ctx = cv.getContext('2d', { alpha: false });
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
   const TAU = Math.PI * 2;
-  const SEE_THROUGH = ['home', 'games', 'assistant', 'history', 'friends'];
+  const SEE_THROUGH = ['home', 'games', 'assistant', 'history', 'friends', 'admin'];
   const rand = (a, b) => a + Math.random() * (b - a);
 
   let W = 0, H = 0, dpr = 1, base = null, scene = 'rings', S = {};

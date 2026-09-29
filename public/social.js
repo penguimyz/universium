@@ -15,7 +15,8 @@ window.social = (() => {
   }
 
   function apply(d) {
-    st.me = d.user; st.friends = d.friends || []; st.incoming = d.incoming || []; st.outgoing = d.outgoing || []; st.blocked = d.blocked || [];
+    st.me = d.user; st.friends = d.friends || [];
+    document.documentElement.classList.toggle('is-admin', !!d.user?.admin); st.incoming = d.incoming || []; st.outgoing = d.outgoing || []; st.blocked = d.blocked || [];
     if (st.open && !st.friends.some(f => f.id === st.open)) st.open = null;
     badge();
   }
@@ -77,6 +78,7 @@ window.social = (() => {
   }
 
   /* ── rendering ── */
+  const tag = u => u.admin ? ' <em class="tag">Admin</em>' : '';
   const avatar = (u, size = 36) => `<span class="av" style="--h:${u.color ?? 260};--s:${size}px">${esc((u.username || '?')[0].toUpperCase())}</span>`;
   const time = t => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const day = t => { const d = new Date(t), n = new Date(), y = new Date(); y.setDate(n.getDate() - 1);
@@ -91,7 +93,7 @@ window.social = (() => {
         <aside class="fl-side">
           <div class="fl-me">
             ${avatar(st.me, 38)}
-            <div><b>${esc(st.me.username)}</b><small>Share your username so friends can add you</small></div>
+            <div><b>${esc(st.me.username)}${tag(st.me)}</b><small>Share your username so friends can add you</small></div>
             <button class="icon-btn" title="Sign out" aria-label="Sign out" data-act="logout">${svg('i-logout')}</button>
           </div>
           <form class="fl-add" data-form="add">
@@ -137,7 +139,7 @@ window.social = (() => {
     html += st.friends.length ? st.friends.map(f => `
       <button class="fl-friend${st.open === f.id ? ' active' : ''}" data-open="${f.id}">
         <span class="av-wrap">${avatar(f, 38)}<i class="dot${f.online ? ' on' : ''}"></i></span>
-        <span class="fl-fmain"><b>${esc(f.username)}</b><small>${st.typing[f.id] && Date.now() - st.typing[f.id] < 3500 ? '<em>typing…</em>' : f.last ? esc((f.last.from === st.me.id ? 'You: ' : '') + f.last.text) : (f.online ? 'Online' : 'Say hi')}</small></span>
+        <span class="fl-fmain"><b>${esc(f.username)}${tag(f)}</b><small>${st.typing[f.id] && Date.now() - st.typing[f.id] < 3500 ? '<em>typing…</em>' : f.last ? esc((f.last.from === st.me.id ? 'You: ' : '') + f.last.text) : (f.online ? 'Online' : 'Say hi')}</small></span>
         ${f.unread ? `<span class="unread">${f.unread > 9 ? '9+' : f.unread}</span>` : f.last ? `<time>${time(f.last.t)}</time>` : ''}
       </button>`).join('') : `<p class="fl-empty">No friends yet. Add someone by their username above.</p>`;
     if (st.outgoing.length) {
@@ -162,7 +164,7 @@ window.social = (() => {
       <header class="fl-head">
         <button class="icon-btn fl-back" data-act="back" aria-label="Back">${svg('i-back')}</button>
         <span class="av-wrap">${avatar(f, 34)}<i class="dot${f.online ? ' on' : ''}"></i></span>
-        <div><b>${esc(f.username)}</b><small id="fl-sub">${f.online ? 'Online' : 'Offline'}</small></div>
+        <div><b>${esc(f.username)}${tag(f)}</b><small id="fl-sub">${f.online ? 'Online' : 'Offline'}</small></div>
         <button class="icon-btn" data-act="friendmenu" data-id="${f.id}" aria-label="More">${svg('i-dots')}</button>
       </header>
       <div class="fl-msgs" id="fl-msgs"><div class="fl-center"><div class="spinner"></div></div></div>
@@ -245,7 +247,7 @@ window.social = (() => {
 
   async function act(action, id, extra) {
     try {
-      if (action === 'logout') { await api('/api/auth/logout', { method: 'POST' }); st.me = null; st.open = null; st.msgs = {}; connect(); render(); renderSettings(); badge(); toast('Signed out'); return; }
+      if (action === 'logout') { await api('/api/auth/logout', { method: 'POST' }); st.me = null; document.documentElement.classList.remove('is-admin'); st.open = null; st.msgs = {}; connect(); render(); renderSettings(); badge(); toast('Signed out'); return; }
       if (action === 'block' && !confirm('Block them? They’ll be removed from your friends and can’t add you again.')) return;
       if (action === 'remove' && !confirm('Remove this friend?')) return;
       apply(await api(`/api/friends/${id}/${action}`, { method: 'POST' }));

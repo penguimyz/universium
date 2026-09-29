@@ -18,11 +18,15 @@ import { SocksProxyAgent } from "socks-proxy-agent";
 import { registerExtras } from "./lib/extras.js";
 import { registerRequests } from "./lib/requests.js";
 import { registerAccounts } from "./lib/accounts.js";
+import { registerAdmin } from "./lib/admin.js";
 const { createBareServer } = barePkg;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const bare = createBareServer("/bare/");
 const app = express();
+// Bump on each release; shown in Settings so you can tell which build is live.
+const VERSION = "2026.09.29-6";
+const STARTED_AT = Date.now();
 app.disable("x-powered-by");
 
 // gzip text responses. Skip the CDN proxy (it streams large binaries and
@@ -30,7 +34,7 @@ app.disable("x-powered-by");
 app.use(compression({
   filter: (req, res) =>
     !req.path.startsWith("/cdn-proxy/") &&
-    req.path !== "/api/events" && // live stream: compression would buffer it
+    req.path !== "/api/events" && req.path !== "/api/ai/chat" && // streams: compression would buffer them
     !/^\/games\/[^/]+\.html$/.test(req.path) &&
     compression.filter(req, res),
 }));
@@ -429,8 +433,9 @@ app.use(express.json({ limit: "200kb" }));
 
 // ── Extras (games from a GitHub repo) and game requests ─────────────────────
 registerExtras(app, { proxyFile, swSuppressor: SW_SUPPRESSOR });
-registerRequests(app, { rootDir: __dirname });
-registerAccounts(app, { rootDir: __dirname });
+const requestsApi = registerRequests(app, { rootDir: __dirname });
+const accountsApi = registerAccounts(app, { rootDir: __dirname });
+registerAdmin(app, { accounts: accountsApi, requests: requestsApi, rootDir: __dirname, aiStatus: () => aiStatus(), version: VERSION, startedAt: STARTED_AT });
 
 // ── AI status: works out exactly which link in the chain is broken ──────────
 // Railway → (Tailscale SOCKS on :1055) → your PC over the tailnet → Ollama :11434 → model.
@@ -490,25 +495,80 @@ app.get("/api/ai/status", async (_req, res) => {
   try { res.json(await aiStatus()); } catch (e) { res.json({ ok: false, step: "unknown", message: e.message }); }
 });
 
+// Small local models copy whatever the system prompt talks about, so keep it about
+// *how* to answer, and only describe the site for when the user actually asks.
+const SYSTEM_PROMPT = process.env.AI_SYSTEM_PROMPT || [
+  "You are a friendly, helpful assistant. Reply to the user's latest message directly.",
+  "If they just say hi, say hi back briefly and ask what they need.",
+  "Keep answers short (1-4 sentences) unless they ask for detail or the task needs it, like code or step-by-step help.",
+  "Use plain conversational text; only use lists when listing several items.",
+  "If you don't know something, say so instead of guessing.",
+  "Only if the user asks about this website: it's called Universium and has a games library, movies, a web browser, friends and chat, and settings for backgrounds and a desktop mode.",
+].join(" ");
+
+// Models installed on the Ollama box (cached briefly), so the chat settings can offer a picker.
+let modelsCache = null;
+async function listModels() {
+  if (modelsCache && Date.now() - modelsCache.at < 60000) return modelsCache.list;
+  const o = await ollamaTags();
+  const list = o.ok ? o.models : (modelsCache?.list || []);
+  modelsCache = { at: Date.now(), list };
+  return list;
+}
+const DEFAULT_MODEL = () => process.env.OLLAMA_MODEL || "deepseek-r1:7b";
+app.get("/api/ai/models", async (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ models: await listModels(), default: DEFAULT_MODEL() });
+});
+
+const LENGTHS = { short: 300, normal: 1200, long: 4000 };
+
+// Streams the reply back as newline-delimited JSON: {"t":"text"} chunks, then {"done":true}
+// (or {"error":"..."}). Hides deepseek-r1's <think> reasoning while it streams.
 app.post("/api/ai/chat", async (req, res) => {
-  const { messages } = req.body;
-  const model = process.env.OLLAMA_MODEL || "deepseek-r1:7b";
+  const { messages, model: wanted, temperature, length, instructions } = req.body || {};
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: "messages (array) is required" });
   }
+  const clean = messages
+    .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+    .slice(-30)
+    .map(m => ({ role: m.role, content: m.content.slice(0, 8000) }));
+  if (!clean.length) return res.status(400).json({ error: "No messages to send." });
+
+  // Only allow models that are actually installed; otherwise use the default.
+  let model = DEFAULT_MODEL();
+  if (typeof wanted === "string" && wanted && wanted !== model) {
+    const installed = await listModels();
+    if (installed.includes(wanted)) model = wanted;
+  }
+  let system = SYSTEM_PROMPT;
+  if (typeof instructions === "string" && instructions.trim()) {
+    system += " The user gave these extra instructions for how to respond: " + instructions.trim().slice(0, 1000);
+  }
+  const options = { num_predict: LENGTHS[length] || LENGTHS.normal };
+  const temp = Number(temperature);
+  if (Number.isFinite(temp)) options.temperature = Math.min(1.5, Math.max(0, temp));
 
   const payload = JSON.stringify({
     model,
-    messages: [
-      { role: "system", content: "You are a quick helpful assistant embedded in Universium, a browser/unblocker app. Keep replies short and direct — 1-3 sentences unless detail is clearly needed. No disclaimers. No bullet lists unless asked. Plain conversational text." },
-      ...messages,
-    ],
+    messages: [{ role: "system", content: system }, ...clean],
     stream: true,
+    options,
     // R1 "thinks" at length before answering, which is slow for quick chat. Ollama 0.9+
     // can skip it; older versions ignore this field. Set OLLAMA_THINK=true to keep it.
     think: process.env.OLLAMA_THINK === "true",
   });
   const target = new URL(`${OLLAMA_HOST}/api/chat`);
+
+  let started = false;
+  const begin = () => {
+    if (started) return;
+    started = true;
+    res.writeHead(200, { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", "X-Accel-Buffering": "no" });
+    res.write(JSON.stringify({ model }) + "\n");
+  };
+  const send = obj => { begin(); res.write(JSON.stringify(obj) + "\n"); };
 
   const upstreamReq = httpRequest(
     {
@@ -517,11 +577,8 @@ app.post("/api/ai/chat", async (req, res) => {
       path: target.pathname,
       method: "POST",
       agent: ollamaAgent,
-      timeout: 120000, // 2 min ceiling — cold model loads can take 30s+
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": Buffer.byteLength(payload),
-      },
+      timeout: 120000, // 2 min of silence max; cold model loads can take 30s+
+      headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(payload) },
     },
     (upstreamRes) => {
       if (upstreamRes.statusCode !== 200) {
@@ -530,43 +587,55 @@ app.post("/api/ai/chat", async (req, res) => {
         upstreamRes.on("end", () => {
           console.error("Ollama upstream error:", upstreamRes.statusCode, errBody);
           aiStatusCache = null;
-          if (!res.headersSent) res.status(502).json({ error: "Ollama error", detail: errBody });
+          let detail = errBody; try { detail = JSON.parse(errBody).error || errBody; } catch {}
+          if (!res.headersSent) res.status(502).json({ error: "Ollama error", detail });
+          else { send({ error: String(detail) }); res.end(); }
         });
         return;
       }
-
-      // Ollama streams newline-delimited JSON chunks; accumulate message.content
-      // from each chunk and reassemble the full reply once done:true arrives.
-      let buffer = "";
-      let fullText = "";
+      begin();
+      // Ollama sends newline-delimited JSON. Rebuild the raw text, then emit only the part
+      // outside <think>…</think> that hasn't been sent yet.
+      let buffer = "", raw = "", sent = 0;
+      const visible = () => {
+        let v = raw.replace(/<think>[\s\S]*?<\/think>/gi, "");
+        const open = v.search(/<think>/i);
+        if (open !== -1) v = v.slice(0, open);           // still thinking
+        const partial = v.match(/<(t(h(i(nk?)?)?)?)?$/i);  // "<thi" might become "<think>"
+        if (partial) v = v.slice(0, partial.index);
+        return v.replace(/^\s+/, "");
+      };
+      const flush = () => {
+        const v = visible();
+        if (v.length > sent) { send({ t: v.slice(sent) }); sent = v.length; }
+      };
       upstreamRes.on("data", (chunk) => {
         buffer += chunk.toString();
-        let lines = buffer.split("\n");
-        buffer = lines.pop(); // keep incomplete last line for next chunk
+        const lines = buffer.split("\n");
+        buffer = lines.pop();
         for (const line of lines) {
           if (!line.trim()) continue;
-          try {
-            const obj = JSON.parse(line);
-            if (obj.message?.content) fullText += obj.message.content;
-          } catch { /* ignore partial/malformed line */ }
+          try { const obj = JSON.parse(line); if (obj.message?.content) raw += obj.message.content; } catch {}
         }
+        flush();
       });
       upstreamRes.on("end", () => {
-        // deepseek-r1 prints its reasoning in <think> tags; users only need the answer.
-        const reply = fullText.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/^[\s\S]*<\/think>/i, "").trim();
-        if (!res.headersSent) res.json({ response: reply, model });
+        flush();
+        send({ done: true });
+        res.end();
       });
     }
   );
 
-  upstreamReq.on("timeout", () => {
-    upstreamReq.destroy(new Error("Ollama request timed out"));
-  });
-
+  // Stop generating if the user hits Stop or leaves.
+  res.on("close", () => { if (!res.writableEnded) upstreamReq.destroy(); });
+  upstreamReq.on("timeout", () => upstreamReq.destroy(new Error("Ollama request timed out")));
   upstreamReq.on("error", (err) => {
+    if (res.writableEnded || res.destroyed) return;
     console.error("Ollama proxy error:", err.message);
     aiStatusCache = null;
     if (!res.headersSent) res.status(502).json({ error: "Unable to reach Ollama", detail: err.message });
+    else { send({ error: err.message }); res.end(); }
   });
 
   upstreamReq.write(payload);
@@ -599,8 +668,6 @@ app.use(express.static(join(__dirname, "public"), {
   // index.html must revalidate so UI updates show up immediately.
   setHeaders: (res, path) => { if (path.endsWith(".html")) res.setHeader("Cache-Control", "no-cache"); },
 }));
-// Bump on each release; shown in Settings so you can tell which build is live.
-const VERSION = "2026.09.29-3";
 app.get("/api/health", (_req, res) => res.json({ ok: true, version: VERSION }));
 // Unknown page paths get the app; missing files (anything with an extension, or under
 // /games, /api, /extras) get a real 404 so games don't try to parse HTML as data.

@@ -11,12 +11,13 @@ window.desktop = (() => {
     { id: 'assistant', name: 'Chat',         icon: 'i-chat',    open: () => openAssistant() },
     { id: 'friends',   name: 'Friends',      icon: 'i-users',   open: () => openFriends() },
     { id: 'history',   name: 'History',      icon: 'i-history', open: () => openHistory() },
+    { id: 'admin',     name: 'Admin',        icon: 'i-shield',  open: () => openAdmin(), adminOnly: true },
     { id: 'settings',  name: 'Settings',     icon: 'i-gear',    open: () => openSettings() },
     { id: 'blank',     name: 'about:blank',  icon: 'i-eye',     open: () => openBlank() },
   ];
   const PINNED = ['games', 'movies', 'browser', 'assistant', 'friends'];
-  const TITLES = { games: 'Games', movies: 'Movies & TV', assistant: 'Chat', friends: 'Friends', history: 'History' };
-  const ICONS = { games: 'i-games', movies: 'i-film', assistant: 'i-chat', friends: 'i-users', history: 'i-history', tab: 'i-globe', game: 'i-games' };
+  const TITLES = { admin: 'Admin', games: 'Games', movies: 'Movies & TV', assistant: 'Chat', friends: 'Friends', history: 'History' };
+  const ICONS = { admin: 'i-shield', games: 'i-games', movies: 'i-film', assistant: 'i-chat', friends: 'i-users', history: 'i-history', tab: 'i-globe', game: 'i-games' };
   let on = false, selected = null;
 
   /* ── build DOM once ── */
@@ -41,7 +42,7 @@ window.desktop = (() => {
     <div class="sm-results" id="sm-results" hidden></div>
     <div class="sm-body" id="sm-body">
       <h3>Apps</h3>
-      <div class="sm-apps">${APPS.map(a => `<button data-app="${a.id}"><span>${svg(a.icon)}</span>${a.name}</button>`).join('')}</div>
+      <div class="sm-apps">${APPS.map(a => `<button data-app="${a.id}"${a.adminOnly ? ' class="admin-only"' : ''}><span>${svg(a.icon)}</span>${a.name}</button>`).join('')}</div>
       <h3>Favorite games</h3>
       <div class="sm-games" id="sm-games"></div>
     </div>
@@ -65,7 +66,7 @@ window.desktop = (() => {
     const links = allLinks().slice(0, 12);
     desk.innerHTML = `
       <div class="desk-icons" id="desk-icons">
-        ${APPS.filter(a => a.id !== 'blank').map(a => `<button class="dicon" data-app="${a.id}"><span class="dicon-img is-app">${svg(a.icon)}</span><span class="dicon-label">${a.name}</span></button>`).join('')}
+        ${APPS.filter(a => a.id !== 'blank').map(a => `<button class="dicon${a.adminOnly ? ' admin-only' : ''}" data-app="${a.id}"><span class="dicon-img is-app">${svg(a.icon)}</span><span class="dicon-label">${a.name}</span></button>`).join('')}
         ${links.map(l => `<button class="dicon" data-url="${esc(l.url)}"><span class="dicon-img"><img src="${fav(hostOf(l.url))}" alt="" onerror="this.remove()"></span><span class="dicon-label">${esc(l.label)}</span></button>`).join('')}
       </div>
       <div class="desk-widget"><b id="dw-time"></b><span id="dw-date"></span><small>Double-click an icon to open it</small></div>`;

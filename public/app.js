@@ -1383,74 +1383,7 @@ function toggleShield() {
 }
 function moviesBlank() { openBlank(window._uvReady ? moviesProxied() : '/'); }
 
-/* ═══════════════ Chat ═══════════════ */
-let chatHist = [], chatBusy = false;
-function fmtBot(text) {
-  return esc(text).replace(/`([^`\n]+)`/g, '<code>$1</code>').replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
-}
-function addMsg(role, text, err) {
-  $('chat-empty')?.remove();
-  const wrap = document.createElement('div');
-  wrap.className = 'msg ' + role + (err ? ' err' : '');
-  wrap.innerHTML = `<div class="bubble">${role === 'bot' ? fmtBot(text) : esc(text)}</div>`;
-  $('ai-msgs').appendChild(wrap);
-  $('chat-scroll').scrollTop = $('chat-scroll').scrollHeight;
-  return wrap;
-}
-async function aiSend(preset) {
-  const inp = $('ai-input');
-  const txt = (preset ?? inp.value).trim();
-  if (!txt || chatBusy) return;
-  inp.value = ''; autosize(inp); $('ai-send').disabled = true;
-  chatBusy = true; sfx.send();
-  addMsg('user', txt);
-  chatHist.push({ role: 'user', content: txt });
-  const pending = addMsg('bot', '');
-  pending.querySelector('.bubble').innerHTML = '<span class="dots"><i></i><i></i><i></i></span>';
-  try {
-    const res = await fetch('/api/ai/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: chatHist.slice(-20) }) });
-    const data = await res.json().catch(() => ({}));
-    pending.remove();
-    if (res.ok && data.response) { chatHist.push({ role: 'assistant', content: data.response }); addMsg('bot', data.response); sfx.recv(); }
-    else {
-      chatHist.pop();
-      let msg = 'Something went wrong on the server. Try again.';
-      if (res.status === 502) { const v = await checkAI(true); msg = v.ok ? 'The model took too long or errored. Try again.' : `The assistant is offline: ${v.message}${v.hint ? '\n' + v.hint : ''}`; }
-      addMsg('bot', msg, true); sfx.error();
-    }
-  } catch {
-    pending.remove(); chatHist.pop();
-    addMsg('bot', "Couldn't reach the server. Check your connection.", true); sfx.error();
-  }
-  chatBusy = false;
-  inp.focus();
-}
-function autosize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 160) + 'px'; }
-$('ai-input').addEventListener('input', e => { autosize(e.target); $('ai-send').disabled = !e.target.value.trim() || chatBusy; });
-$('ai-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); aiSend(); } });
-document.querySelector('.suggest').addEventListener('click', e => { const b = e.target.closest('button'); if (b) aiSend(b.textContent); });
-
-// Asks the server which link (Tailscale, your PC, Ollama, the model) is working.
-async function checkAI(force) {
-  const box = $('ai-status');
-  if (!force && checkAI.last && Date.now() - checkAI.last.at < 20000) return checkAI.last.v;
-  box.className = 'ai-status checking'; box.innerHTML = '<i></i>Checking the assistant…';
-  let v;
-  try { v = await (await fetch('/api/ai/status', { cache: 'no-store' })).json(); }
-  catch { v = { ok: false, message: "Couldn't reach the server.", hint: '' }; }
-  checkAI.last = { at: Date.now(), v };
-  box.className = 'ai-status ' + (v.ok ? 'ok' : 'bad');
-  box.innerHTML = v.ok ? `<i></i>Online · ${esc(v.message.replace(/^Connected to |\.$/g, ''))}`
-    : `<i></i><div><b>Assistant offline: ${esc(v.message)}</b>${v.hint ? `<span>${esc(v.hint)}</span>` : ''}</div>`;
-  return v;
-}
-
-const openAssistant = nav(() => {
-  stopAllRunningContent();
-  showView('assistant');
-  checkAI();
-  setTimeout(() => $('ai-input').focus(), 30);
-});
+/* Chat (the AI assistant) lives in assistant.js. */
 
 /* ═══════════════ Settings ═══════════════ */
 function openSettings() {
