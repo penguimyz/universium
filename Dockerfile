@@ -1,17 +1,21 @@
 FROM node:20-slim
 
-ARG CACHEBUST=1
-
-RUN apt-get update && apt-get install -y curl && \
-    curl -fsSL https://tailscale.com/install.sh | sh && \
-    rm -rf /var/lib/apt/lists/*
+# Tailscale (optional, for the chat assistant). curl + certs are needed to install it.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && curl -fsSL https://tailscale.com/install.sh | sh \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY package.json ./
-RUN npm install
-COPY . .
 
+# Install dependencies first so code changes don't bust the npm layer.
+COPY package.json package-lock.json* ./
+RUN npm install --omit=dev --no-audit --no-fund
+
+COPY . .
+RUN chmod +x start.sh
+
+ENV NODE_ENV=production
 ENV PORT=8080
-CMD tailscaled --tun=userspace-networking --state=/data/tailscale/tailscaled.state --socks5-server=localhost:1055 & sleep 2 && \
-tailscale up --authkey=${TAILSCALE_AUTHKEY} --accept-routes && \
-ALL_PROXY=socks5h://localhost:1055 node server.js
+EXPOSE 8080
+CMD ["./start.sh"]

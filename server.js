@@ -3,19 +3,59 @@ import { request as httpsRequest } from "node:https";
 import { request as httpRequest } from "node:http";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import express from "express";
+import compression from "compression";
+import { gzipSync } from "node:zlib";
+import { createHash } from "node:crypto";
 import { uvPath } from "@titaniumnetwork-dev/ultraviolet";
 import { epoxyPath } from "@mercuryworkshop/epoxy-transport";
 import { baremuxPath } from "@mercuryworkshop/bare-mux/node";
 import wisp from "wisp-server-node";
 import barePkg from "@tomphttp/bare-server-node";
 import { SocksProxyAgent } from "socks-proxy-agent";
+import { registerExtras } from "./lib/extras.js";
+import { registerRequests } from "./lib/requests.js";
 const { createBareServer } = barePkg;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const bare = createBareServer("/bare/");
 const app = express();
+app.disable("x-powered-by");
+
+// gzip text responses. Skip the CDN proxy (it streams large binaries and
+// sometimes forwards upstream Content-Length) and /games/<name>.html (pre-gzipped below).
+app.use(compression({
+  filter: (req, res) =>
+    !req.path.startsWith("/cdn-proxy/") &&
+    !/^\/games\/[^/]+\.html$/.test(req.path) &&
+    compression.filter(req, res),
+}));
+
+// Serve a pre-built <file>.gz when one sits next to the requested file (e.g. Minecraft's
+// 22 MB classes.js ships as a 4 MB .gz), so big files are never compressed at request time.
+const gzExists = new Map();
+app.use(async (req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  // Only local game files; proxied paths are unbounded and must not fill this cache.
+  if (!req.path.startsWith("/games/")) return next();
+  if (!/\bgzip\b/.test(req.headers["accept-encoding"] || "")) return next();
+  let rel;
+  try { rel = decodeURIComponent(req.path); } catch { return next(); }
+  if (rel.includes("..") || rel.endsWith("/")) return next();
+  const file = join(__dirname, "public", rel);
+  let has = gzExists.get(file);
+  if (has === undefined) {
+    has = await stat(file + ".gz").then(s => s.isFile(), () => false);
+    gzExists.set(file, has);
+  }
+  if (!has) return next();
+  res.setHeader("Content-Encoding", "gzip");
+  res.setHeader("Vary", "Accept-Encoding");
+  res.setHeader("Content-Type", typeFor(rel) || "application/octet-stream");
+  res.setHeader("Cache-Control", "public, max-age=604800");
+  res.sendFile(file + ".gz", { headers: { "Content-Type": typeFor(rel) || "application/octet-stream" } });
+});
 
 // ── Ollama (AI) config ────────────────────────────────────────────────────────
 // Ollama runs on a Windows box reachable only over the Tailscale tailnet.
@@ -62,11 +102,35 @@ function jsdToRaw(hostAndPath) {
 const CONTENT_TYPES = {
   wasm: "application/wasm",
   js:   "application/javascript",
+  mjs:  "application/javascript",
+  json: "application/json",
+  css:  "text/css",
+  html: "text/html; charset=utf-8",
+  htm:  "text/html; charset=utf-8",
+  txt:  "text/plain; charset=utf-8",
+  xml:  "application/xml",
+  svg:  "image/svg+xml",
+  png:  "image/png",
+  jpg:  "image/jpeg",
+  jpeg: "image/jpeg",
+  gif:  "image/gif",
+  webp: "image/webp",
+  ico:  "image/x-icon",
+  mp3:  "audio/mpeg",
+  ogg:  "audio/ogg",
+  wav:  "audio/wav",
+  m4a:  "audio/mp4",
+  mp4:  "video/mp4",
+  webm: "video/webm",
+  woff: "font/woff",
+  woff2:"font/woff2",
+  ttf:  "font/ttf",
+  otf:  "font/otf",
   pck:  "application/octet-stream",
   data: "application/octet-stream",
-  png:  "image/png",
-  html: "text/html",
+  unityweb: "application/octet-stream",
 };
+const typeFor = path => CONTENT_TYPES[decodeURIComponent(path.split("?")[0]).split(".").pop().toLowerCase()];
 
 // ── IcyStreaming integration ─────────────────────────────────────────────────
 const TMDB_BASE = "https://api.themoviedb.org/3";
@@ -180,7 +244,7 @@ function streamPart(hostname, basePath, partNum, res, headersWritten) {
       res.status(200);
       res.setHeader("Access-Control-Allow-Origin", "*");
       const ext = basePath.split(".").pop().toLowerCase();
-      res.setHeader("Content-Type", CONTENT_TYPES[ext] || "application/octet-stream");
+      res.setHeader("Content-Type", typeFor(basePath) || CONTENT_TYPES[ext] || "application/octet-stream");
     }
     upstream.on("end", () => streamPart(hostname, basePath, partNum + 1, res, true));
     upstream.on("error", () => { if (!res.writableEnded) res.end(); });
@@ -189,7 +253,8 @@ function streamPart(hostname, basePath, partNum, res, headersWritten) {
 }
 
 // Main proxy handler: try direct file first, fall back to part stitching on 404
-function proxyFile(hostname, path, res) {
+// opts.typeByExt: trust the file extension over upstream's Content-Type (raw GitHub says text/plain).
+function proxyFile(hostname, path, res, opts = {}) {
   fetchFollowRedirects(hostname, path, 5, (err, upstream) => {
     if (err) {
       if (!res.headersSent) res.status(502).send("Proxy error: " + err.message);
@@ -200,6 +265,8 @@ function proxyFile(hostname, path, res) {
       res.setHeader("Access-Control-Allow-Origin", "*");
       const fwd = ["content-type", "content-length", "cache-control", "last-modified", "etag"];
       fwd.forEach(h => { if (upstream.headers[h]) res.setHeader(h, upstream.headers[h]); });
+      if (opts.typeByExt && typeFor(path)) res.setHeader("Content-Type", typeFor(path));
+      if (opts.cacheControl) res.setHeader("Cache-Control", opts.cacheControl);
       upstream.pipe(res);
       return;
     }
@@ -218,7 +285,9 @@ function proxyFile(hostname, path, res) {
 app.get("/cdn-proxy/*", (req, res) => {
   const target = jsdToRaw(req.params[0]);
   if (!target) return res.status(400).send("Bad CDN URL");
-  proxyFile(target.hostname, target.path, res);
+  // raw.githubusercontent.com labels everything text/plain; use the extension instead so
+  // .wasm arrives as application/wasm (lets browsers compile it while it streams).
+  proxyFile(target.hostname, target.path, res, { typeByExt: target.hostname === "raw.githubusercontent.com" });
 });
 
 // ── Game HTML serving ─────────────────────────────────────────────────────────
@@ -228,9 +297,35 @@ app.get("/cdn-proxy/*", (req, res) => {
 //    so every asset the game engine resolves goes through our proxy on the same origin.
 const SHA_RE = /(cdn\.jsdelivr\.net\/gh\/[^@"']+)@([0-9a-f]{40})/gi;
 
+// Rewritten game pages are cached in memory with a gzipped copy, so the
+// 17 MB Minecraft page isn't re-read, re-regexed and re-compressed per request.
+const gameCache = new Map();
+
 app.get("/games/:name.html", async (req, res) => {
   try {
-    const filePath = join(__dirname, "public", "games", req.params.name + ".html");
+    if (!/^[a-z0-9_-]+$/i.test(req.params.name)) return res.status(404).send("Game not found");
+    let entry = gameCache.get(req.params.name);
+    if (!entry) {
+      entry = await buildGamePage(req.params.name);
+      gameCache.set(req.params.name, entry);
+    }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.setHeader("ETag", entry.etag);
+    res.setHeader("Vary", "Accept-Encoding");
+    if (req.headers["if-none-match"] === entry.etag) return res.status(304).end();
+    if (/\bgzip\b/.test(req.headers["accept-encoding"] || "")) {
+      res.setHeader("Content-Encoding", "gzip");
+      return res.send(entry.gz);
+    }
+    res.send(entry.raw);
+  } catch {
+    res.status(404).send("Game not found");
+  }
+});
+
+async function buildGamePage(name) {
+    const filePath = join(__dirname, "public", "games", name + ".html");
     let html = await readFile(filePath, "utf8");
 
     // Normalise all dead-SHA CDN refs to @main
@@ -242,7 +337,7 @@ app.get("/games/:name.html", async (req, res) => {
       "cdn.jsdelivr.net/gh/web-dashers/web-dashers.github.io@main"
     );
     // Avoid a local 404 for the game's root-relative favicon.
-    if (req.params.name === "geometry_dash") {
+    if (name === "geometry_dash") {
       html = html.replace(
         /(["'])\/assets\//g,
         "$1/cdn-proxy/cdn.jsdelivr.net/gh/web-dashers/web-dashers.github.io@main/assets/"
@@ -256,12 +351,13 @@ app.get("/games/:name.html", async (req, res) => {
       "/cdn-proxy/$1/"
     );
 
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.send(SW_SUPPRESSOR + html);
-  } catch {
-    res.status(404).send("Game not found");
-  }
-});
+    const raw = Buffer.from(SW_SUPPRESSOR + html, "utf8");
+    return {
+      raw,
+      gz: gzipSync(raw, { level: 6 }),
+      etag: '"' + createHash("sha1").update(raw).digest("base64url").slice(0, 16) + '"',
+    };
+}
 
 // ── IcyStreaming movie site ──────────────────────────────────────────────────
 app.get("/movies.html", async (_req, res) => {
@@ -326,12 +422,15 @@ app.get("/api/tv/:id", (req, res) =>
 // Passing `dispatcher: ollamaAgent` explicitly routes this one call through
 // the local SOCKS5 endpoint tailscaled exposes; nothing else on the server
 // goes through it, so TMDB etc. stay on their normal direct path.
-app.use(express.json());
+app.use(express.json({ limit: "200kb" }));
 
-app.use(express.json());
+// ── Extras (games from a GitHub repo) and game requests ─────────────────────
+registerExtras(app, { proxyFile, swSuppressor: SW_SUPPRESSOR });
+registerRequests(app, { rootDir: __dirname });
 
 app.post("/api/ai/chat", async (req, res) => {
-  const { messages, model = "deepseek-r1:7b" } = req.body;
+  const { messages } = req.body;
+  const model = process.env.OLLAMA_MODEL || "deepseek-r1:7b";
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: "messages (array) is required" });
   }
@@ -343,6 +442,9 @@ app.post("/api/ai/chat", async (req, res) => {
       ...messages,
     ],
     stream: true,
+    // R1 "thinks" at length before answering, which is slow for quick chat. Ollama 0.9+
+    // can skip it; older versions ignore this field. Set OLLAMA_THINK=true to keep it.
+    think: process.env.OLLAMA_THINK === "true",
   });
   const target = new URL(`${OLLAMA_HOST}/api/chat`);
 
@@ -387,7 +489,9 @@ app.post("/api/ai/chat", async (req, res) => {
         }
       });
       upstreamRes.on("end", () => {
-        if (!res.headersSent) res.json({ response: fullText, model });
+        // deepseek-r1 prints its reasoning in <think> tags; users only need the answer.
+        const reply = fullText.replace(/<think>[\s\S]*?<\/think>/gi, "").replace(/^[\s\S]*<\/think>/i, "").trim();
+        if (!res.headersSent) res.json({ response: reply, model });
       });
     }
   );
@@ -415,13 +519,32 @@ app.get("/uv/uv.config.js", (_req, res) => {
   res.setHeader("Content-Type", "application/javascript");
   res.sendFile(join(__dirname, "public", "uv", "uv.config.js"));
 });
-app.use("/uv/", express.static(uvPath));
-app.use("/epoxy/", express.static(epoxyPath));
-app.use("/baremux/", express.static(baremuxPath));
+const libCache = { maxAge: "1d" };
+app.use("/uv/", express.static(uvPath, libCache));
+app.use("/epoxy/", express.static(epoxyPath, libCache));
+app.use("/baremux/", express.static(baremuxPath, libCache));
 
 // ── Static + fallback ─────────────────────────────────────────────────────────
-app.use(express.static(join(__dirname, "public")));
-app.get("*", (_req, res) => res.sendFile(join(__dirname, "public", "index.html")));
+app.use("/img/", express.static(join(__dirname, "public", "img"), { maxAge: "7d" }));
+// Minecraft's builds are large and never change between releases; let browsers keep them.
+app.use("/games/minecraft/", express.static(join(__dirname, "public", "games", "minecraft"), {
+  maxAge: "7d",
+  setHeaders: (res, path) => { if (path.endsWith(".html")) res.setHeader("Cache-Control", "no-cache"); },
+}));
+app.use(express.static(join(__dirname, "public"), {
+  // index.html must revalidate so UI updates show up immediately.
+  setHeaders: (res, path) => { if (path.endsWith(".html")) res.setHeader("Cache-Control", "no-cache"); },
+}));
+app.get("/api/health", (_req, res) => res.json({ ok: true }));
+// Unknown page paths get the app; missing files (anything with an extension, or under
+// /games, /api, /extras) get a real 404 so games don't try to parse HTML as data.
+app.get("*", (req, res) => {
+  if (/\.[a-z0-9]{1,8}$/i.test(req.path) || /^\/(games|api|extras|cdn-proxy)\//.test(req.path)) {
+    return res.status(404).send("Not found");
+  }
+  res.setHeader("Cache-Control", "no-cache");
+  res.sendFile(join(__dirname, "public", "index.html"));
+});
 
 // ── HTTP server ───────────────────────────────────────────────────────────────
 const server = createServer();
@@ -435,5 +558,5 @@ server.on("upgrade", (req, socket, head) => {
 });
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`\n  ★  Universe OS  →  http://localhost:${PORT}\n`);
+  console.log(`Universium listening on port ${PORT}`);
 });

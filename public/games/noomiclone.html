@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Only the game from frendmatt/NoomiClone-Website; the server rewrites this to /cdn-proxy/... -->
+<base href="https://raw.githubusercontent.com/frendmatt/NoomiClone-Website/main/">
+<title>NoomiClone</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0f1012; font: 13px -apple-system, "Segoe UI", Roboto, sans-serif; color: #ececee; }
+  #unity-canvas { display: block; width: 100%; height: 100%; background: #0f1012; outline: none; }
+
+  #load { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; background: #0f1012; transition: opacity .4s; }
+  #load.done { opacity: 0; pointer-events: none; }
+  #load b { font-size: 15px; }
+  #bar { width: min(320px, 70vw); height: 6px; border-radius: 6px; background: #26282d; overflow: hidden; }
+  #fill { height: 100%; width: 0; border-radius: inherit; background: #b9a3ff; transition: width .2s; }
+  #pct { color: #a1a3a9; font-variant-numeric: tabular-nums; }
+  #err { color: #ff8a8a; max-width: 420px; text-align: center; display: none; }
+
+  /* Controls card: open for the first few seconds, then folds into a small pill. */
+  #keys {
+    position: fixed; top: 12px; left: 12px; z-index: 5; width: 250px; padding: 12px 14px 12px;
+    background: rgba(15,16,18,.86); border: 1px solid #36383e; border-radius: 14px; backdrop-filter: blur(8px);
+    box-shadow: 0 16px 40px -12px rgba(0,0,0,.8); transition: width .25s, padding .25s, opacity .2s; user-select: none;
+  }
+  #keys header { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; }
+  #keys header b { font-size: 13px; }
+  #keys header span { color: #6c6f76; font-size: 11.5px; white-space: nowrap; }
+  #keys ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+  #keys li { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: #a1a3a9; }
+  #keys kbd { font: 600 11px ui-monospace, Menlo, Consolas, monospace; color: #ececee; background: #26282d; border: 1px solid #36383e; border-bottom-width: 2px; border-radius: 6px; padding: 2px 6px; min-width: 14px; text-align: center; }
+  #keys .k { display: flex; gap: 4px; }
+  #keys p { margin: 10px 0 0; color: #6c6f76; font-size: 11.5px; line-height: 1.4; }
+  #keys.min { width: auto; padding: 7px 12px; }
+  #keys.min ul, #keys.min p { display: none; }
+  #keys kbd.hit { background: #b9a3ff; color: #140e24; border-color: #b9a3ff; }
+</style>
+</head>
+<body>
+<canvas id="unity-canvas" tabindex="-1"></canvas>
+
+<div id="load">
+  <b>Loading NoomiClone</b>
+  <div id="bar"><div id="fill"></div></div>
+  <span id="pct">0%</span>
+  <span id="err"></span>
+</div>
+
+<aside id="keys" aria-label="Controls">
+  <header id="keys-head"><b>Controls</b><span id="keys-hint">H to hide</span></header>
+  <ul>
+    <li>Let go <span class="k"><kbd data-k="ArrowUp">↑</kbd></span></li>
+    <li>Arch / extend <span class="k"><kbd data-k="ArrowLeft">←</kbd></span></li>
+    <li>Tuck <span class="k"><kbd data-k="KeyQ">Q</kbd><kbd data-k="Space">Space</kbd></span></li>
+    <li>Pike <span class="k"><kbd data-k="KeyW">W</kbd></span></li>
+    <li>Layout <span class="k"><kbd data-k="KeyE">E</kbd></span></li>
+    <li>Flash kick <span class="k"><kbd data-k="KeyF">F</kbd></span></li>
+    <li>Stick <span class="k"><kbd data-k="KeyS">S</kbd></span></li>
+    <li>Unstick <span class="k"><kbd data-k="KeyD">D</kbd></span></li>
+    <li>Squat <span class="k"><kbd data-k="ArrowDown">↓</kbd></span></li>
+    <li>Reset <span class="k"><kbd data-k="KeyR">R</kbd></span></li>
+  </ul>
+  <p>The on-screen movement buttons don't work in this build. Use the keys.</p>
+</aside>
+
+<script>
+(() => {
+  const canvas = document.getElementById('unity-canvas');
+  const keys = document.getElementById('keys');
+  const hint = document.getElementById('keys-hint');
+  const setMin = min => { keys.classList.toggle('min', min); hint.textContent = min ? 'H to show' : 'H to hide'; };
+  const focusGame = () => { try { canvas.focus(); window.focus(); } catch (e) {} };
+
+  // Clicking the card toggles it without stealing keyboard focus from the game.
+  document.getElementById('keys-head').addEventListener('mousedown', e => { e.preventDefault(); setMin(!keys.classList.contains('min')); focusGame(); });
+  canvas.addEventListener('mousedown', focusGame);
+
+  const kbds = {};
+  document.querySelectorAll('#keys kbd').forEach(k => (kbds[k.dataset.k] ||= []).push(k));
+  addEventListener('keydown', e => {
+    if (e.code === 'KeyH' && !e.repeat) setMin(!keys.classList.contains('min'));
+    (kbds[e.code] || []).forEach(k => k.classList.add('hit'));
+    // Arrow keys and space would otherwise scroll the parent page.
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+  }, true);
+  addEventListener('keyup', e => (kbds[e.code] || []).forEach(k => k.classList.remove('hit')), true);
+
+  const fill = document.getElementById('fill'), pct = document.getElementById('pct'), err = document.getElementById('err');
+  const config = {
+    dataUrl: 'Build/V1.7.5.data',
+    frameworkUrl: 'Build/V1.7.5.framework.js',
+    codeUrl: 'Build/V1.7.5.wasm',
+    streamingAssetsUrl: new URL('StreamingAssets', document.baseURI).href,
+    companyName: 'NoomiClone Dev',
+    productName: 'NoomiClone',
+    productVersion: '1.7.5',
+    showBanner: (msg, type) => { if (type === 'error') { err.style.display = 'block'; err.textContent = msg; } },
+  };
+  const s = document.createElement('script');
+  s.src = 'Build/V1.7.5.loader.js';
+  s.onerror = () => { err.style.display = 'block'; err.textContent = "Couldn't download the game. Refresh to try again."; };
+  s.onload = () => {
+    createUnityInstance(canvas, config, p => { fill.style.width = (p * 100) + '%'; pct.textContent = Math.round(p * 100) + '%'; })
+      .then(() => {
+        document.getElementById('load').classList.add('done');
+        focusGame();
+        setTimeout(() => setMin(true), 9000);
+      })
+      .catch(m => { err.style.display = 'block'; err.textContent = String(m); });
+  };
+  document.body.appendChild(s);
+})();
+</script>
+</body>
+</html>

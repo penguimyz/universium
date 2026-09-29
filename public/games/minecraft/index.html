@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html style="height:100%;background:#000">
+<head>
+<meta charset="utf-8">
+<title>Minecraft</title>
+<script>
+  // EaglercraftX 1.8 u53 ships two builds of the same client:
+  //   wasm/  WASM-GC: ~11 MB and runs faster, needs Chrome/Edge 119+, Firefox 120+ or Safari 18.2+
+  //   js/    plain JavaScript: ~11 MB gzipped + 7 MB assets, works in any modern browser
+  // Use WASM when the browser supports GC types, otherwise JS. ?build=js or ?build=wasm forces one.
+  (function () {
+    var forced = /[?&]build=(js|wasm)\b/.exec(location.search);
+    var gc = false;
+    try {
+      // Smallest module that declares a struct type; only validates with WebAssembly GC support.
+      gc = typeof WebAssembly === 'object' &&
+        WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 95, 1, 120, 0]));
+    } catch (e) {}
+    var build = forced ? forced[1] : (gc ? 'wasm' : 'js');
+    location.replace(build + '/index.html');
+  })();
+</script>
+</head>
+<body></body>
+</html>
