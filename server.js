@@ -19,6 +19,7 @@ import { registerExtras } from "./lib/extras.js";
 import { registerRequests } from "./lib/requests.js";
 import { registerAccounts } from "./lib/accounts.js";
 import { registerAdmin } from "./lib/admin.js";
+import { registerDuel } from "./lib/duel.js";
 import { dataDir, isPersistent } from "./lib/datadir.js";
 const { createBareServer } = barePkg;
 
@@ -26,7 +27,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const bare = createBareServer("/bare/");
 const app = express();
 // Bump on each release; shown in Settings so you can tell which build is live.
-const VERSION = "2026.09.29-7";
+const VERSION = "2026.09.29-13";
 const STARTED_AT = Date.now();
 app.disable("x-powered-by");
 
@@ -430,12 +431,13 @@ app.get("/api/tv/:id", (req, res) =>
 // Passing `dispatcher: ollamaAgent` explicitly routes this one call through
 // the local SOCKS5 endpoint tailscaled exposes; nothing else on the server
 // goes through it, so TMDB etc. stay on their normal direct path.
-app.use(express.json({ limit: "200kb" }));
+app.use(express.json({ limit: "2mb" })); // room for synced account data
 
 // ── Extras (games from a GitHub repo) and game requests ─────────────────────
 registerExtras(app, { proxyFile, swSuppressor: SW_SUPPRESSOR });
 const requestsApi = registerRequests(app, { rootDir: __dirname });
 const accountsApi = registerAccounts(app, { rootDir: __dirname });
+const duel = registerDuel(app, { accounts: accountsApi });
 registerAdmin(app, { accounts: accountsApi, requests: requestsApi, rootDir: __dirname, aiStatus: () => aiStatus(), version: VERSION, startedAt: STARTED_AT });
 
 // ── AI status: works out exactly which link in the chain is broken ──────────
@@ -687,7 +689,8 @@ server.on("request", (req, res) => {
   else app(req, res);
 });
 server.on("upgrade", (req, socket, head) => {
-  if (bare.shouldRoute(req)) bare.routeUpgrade(req, socket, head);
+  if (req.url.startsWith("/duel-ws")) duel.handleUpgrade(req, socket, head);
+  else if (bare.shouldRoute(req)) bare.routeUpgrade(req, socket, head);
   else wisp.routeRequest(req, socket, head);
 });
 const PORT = process.env.PORT || 5000;

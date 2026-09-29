@@ -830,6 +830,8 @@ html.rail-collapsed .rail-btn .badge { position: absolute; top: 4px; right: 4px;
 .fl-fmain b { display: block; font-weight: 600; font-size: 14px; }
 .fl-fmain small { display: block; color: var(--faint); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fl-fmain em, #fl-sub em { color: var(--accent); font-style: normal; }
+.fl-fmain b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fl-fmain em.tag { color: var(--accent-ink); }
 .fl-friend time { color: var(--faint); font-size: 11.5px; }
 .unread { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 11.5px; font-weight: 700; display: grid; place-items: center; }
 
@@ -1094,3 +1096,43 @@ html.is-admin .sm-apps .admin-only { display: flex !important; }
 .announce[data-tone="warn"] > svg { color: #f6b44a; }
 .announce[data-tone="party"] { background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 30%, #15161a), color-mix(in srgb, #ff8fa3 25%, #15161a)); }
 @media (max-width: 720px) { .adm-row { flex-wrap: wrap; } .adm-tabs { grid-template-columns: repeat(2, 1fr); } }
+
+/* ── In-site dialogs (ui.js) ───────────────────────── */
+.dlg-scrim { position: fixed; inset: 0; z-index: 300; display: grid; place-items: center; padding: 16px; background: rgba(5,5,8,.62); animation: fadeIn .15s; }
+.dlg-scrim.out { opacity: 0; transition: opacity .15s; }
+.dlg {
+  width: min(420px, 100%); padding: 22px; border-radius: 18px; display: flex; flex-direction: column; gap: 12px;
+  background: var(--bg-2); border: 1px solid var(--line-2);
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,.9), 0 0 60px -30px var(--accent);
+  animation: modalIn .22s var(--ease);
+}
+.dlg.danger { box-shadow: 0 30px 80px -20px rgba(0,0,0,.9), 0 0 60px -30px var(--danger); }
+.dlg h2 { font: 700 19px var(--display); letter-spacing: -.01em; }
+.dlg p { color: var(--muted); font-size: 14px; line-height: 1.5; }
+.dlg .field { flex: none; height: 42px; font-size: 15px; }
+.dlg-copy { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 14px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line-2); }
+.dlg-copy code { flex: 1; font: 600 17px var(--mono); letter-spacing: .04em; color: var(--text); user-select: all; word-break: break-all; }
+.dlg-err { color: var(--danger) !important; min-height: 1em; font-size: 13px !important; margin: -4px 0; }
+.dlg-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.dlg-btns .btn { height: 38px; padding: 0 16px; }
+
+.tag.warn { background: #f6b44a; color: #2a1a02; }
+.adm-h { font-size: 13px; color: var(--muted); font-weight: 600; margin: 20px 0 4px; }
+
+/* ── Duels ─────────────────────────────────────── */
+.duel-btn { display: inline-flex; align-items: center; gap: 6px; }
+.duel-btn svg { width: 15px; height: 15px; }
+.menu .menu-h { height: 28px; font-size: 11.5px; font-weight: 650; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+#duel-invites { position: fixed; right: 16px; bottom: 16px; z-index: 200; display: flex; flex-direction: column; gap: 10px; }
+.duel-invite {
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px; width: min(380px, calc(100vw - 32px));
+  background: rgba(24,25,29,.98); border: 1px solid var(--line-2); border-radius: 14px;
+  box-shadow: 0 20px 50px -12px rgba(0,0,0,.8), 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+  animation: di-in .3s var(--ease) both;
+}
+.duel-invite.out { animation: di-out .25s var(--ease) both; }
+.duel-invite .di-main { flex: 1; min-width: 0; }
+.duel-invite b { display: block; font-weight: 650; }
+.duel-invite small { color: var(--muted); font-size: 12.5px; }
+@keyframes di-in { from { opacity: 0; transform: translateY(16px) scale(.97); } }
+@keyframes di-out { to { opacity: 0; transform: translateX(30px); } }

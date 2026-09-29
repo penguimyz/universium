@@ -200,8 +200,8 @@
   $('ai-length').addEventListener('click', e => { const b = e.target.closest('[data-len]'); if (!b) return; cfg.ai.length = b.dataset.len; saveCfg(); paintSettings(); sfx.tick(); });
   $('ai-instr').addEventListener('input', e => { cfg.ai.instructions = e.target.value; clearTimeout(paintSettings.t); paintSettings.t = setTimeout(saveCfg, 400); });
 
-  window.aiClearAll = () => {
-    if (!chats.length || !confirm('Delete all chats? This can’t be undone.')) return;
+  window.aiClearAll = async () => {
+    if (!chats.length || !(await ui.confirm({ title: 'Delete all chats?', message: 'Every conversation is deleted. This can’t be undone.', confirmText: 'Delete all', danger: true }))) return;
     chats = []; current = null; saveChats(); renderList(); renderChat(); aiSettings(false);
     toast('All chats deleted');
   };
@@ -225,12 +225,12 @@
   $('ai-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); if (!controller) aiSend(); } });
   $('ai-find').addEventListener('input', e => { filter = e.target.value; renderList(); });
 
-  $('ai-list').addEventListener('click', e => {
+  $('ai-list').addEventListener('click', async e => {
     const del = e.target.closest('[data-del]');
     if (del) {
       e.stopPropagation();
       const c = chats.find(x => x.id === del.dataset.del);
-      if (!c || !confirm(`Delete "${c.title}"?`)) return;
+      if (!c || !(await ui.confirm({ title: 'Delete this chat?', message: `“${c.title}” will be deleted.`, confirmText: 'Delete', danger: true }))) return;
       chats = chats.filter(x => x !== c);
       if (current === c.id) current = null;
       saveChats(); renderList(); renderChat(); sfx.close();
@@ -240,7 +240,7 @@
     if (ren) {
       e.stopPropagation();
       const c = chats.find(x => x.id === ren.dataset.rename); if (!c) return;
-      const t = prompt('Rename chat', c.title);
+      const t = await ui.prompt({ title: 'Rename chat', value: c.title, maxlength: 60, confirmText: 'Rename' });
       if (t && t.trim()) { c.title = t.trim().slice(0, 60); saveChats(); renderList(); if (c.id === current) $('ai-title').textContent = c.title; }
       return;
     }

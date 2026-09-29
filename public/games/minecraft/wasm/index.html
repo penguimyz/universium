@@ -14,6 +14,21 @@
 		<link type="image/png" rel="shortcut icon" href="favicon.png" />
 		<script type="text/javascript" src="bootstrap.js"></script>
 		<script type="text/javascript">
+			// Eaglercraft cancels mousedown on its canvas, and a cancelled mousedown stops the browser
+			// from moving keyboard focus back into this frame after you click somewhere else on the
+			// page (sidebar, another window). Take focus back ourselves on every click or tap.
+			(function() {
+				function grab() {
+					if (document.hasFocus()) return;
+					try { if (window.frameElement) window.frameElement.focus(); } catch (e) {}
+					try { window.focus(); } catch (e) {}
+				}
+				window.addEventListener("pointerdown", grab, true);
+				window.addEventListener("mousedown", grab, true);
+				window.addEventListener("touchstart", grab, { capture: true, passive: true });
+			})();
+		</script>
+		<script type="text/javascript">
 			"use strict";
 			window.addEventListener("load", function() {
 				if(window.location.href.indexOf("file:") === 0) {

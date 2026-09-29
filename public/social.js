@@ -2,27 +2,35 @@
    Uses helpers from app.js ($, esc, svg, toast, sfx, showView, nav, cfg). */
 window.social = (() => {
   const st = {
-    loaded: false, me: null, friends: [], incoming: [], outgoing: [], blocked: [],
+    loaded: false, me: null, friends: [], dms: [], incoming: [], outgoing: [], blocked: [],
     open: null, msgs: {}, more: {}, theirRead: {}, typing: {}, es: null, authMode: 'login', busy: false,
   };
   const root = () => document.getElementById('friends-root');
+  // Anyone you can chat with: friends plus direct messages with admins.
+  const who = id => st.friends.find(x => x.id === id) || st.dms.find(x => x.id === id);
+  const people = () => [...st.friends, ...st.dms];
 
   async function api(path, { method = 'GET', body } = {}) {
     const r = await fetch(path, { method, credentials: 'same-origin', headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined });
     const d = await r.json().catch(() => ({}));
-    if (!r.ok) throw Object.assign(new Error(d.error || (r.status >= 500 ? 'The server had a problem. Try again.' : 'Something went wrong.')), { status: r.status });
+    if (!r.ok) throw Object.assign(new Error(d.error || (r.status >= 500 ? 'The server had a problem. Try again.' : 'Something went wrong.')), { status: r.status, data: d });
     return d;
   }
 
   function apply(d) {
     st.me = d.user; st.friends = d.friends || [];
-    document.documentElement.classList.toggle('is-admin', !!d.user?.admin); st.incoming = d.incoming || []; st.outgoing = d.outgoing || []; st.blocked = d.blocked || [];
-    if (st.open && !st.friends.some(f => f.id === st.open)) st.open = null;
+    // Keep a chat an admin just opened with someone new, until the server lists it.
+    const draft = st.dms.find(x => x.draft && x.id === st.open);
+    st.dms = d.dms || [];
+    if (draft && !who(draft.id)) st.dms.unshift(draft);
+    document.documentElement.classList.toggle('is-admin', !!d.user?.admin);
+    window.account?.onUser(d.user); st.incoming = d.incoming || []; st.outgoing = d.outgoing || []; st.blocked = d.blocked || [];
+    if (st.open && !who(st.open)) st.open = null;
     badge();
   }
   async function refresh() {
     try { apply(await api('/api/me')); }
-    catch (e) { st.me = null; if (e.status !== 401 && location.protocol !== 'file:') st.offline = true; }
+    catch (e) { st.me = null; window.account?.onUser(null); if (e.status !== 401 && location.protocol !== 'file:') st.offline = true; }
     st.loaded = true;
     connect(); render(); renderSettings();
   }
@@ -39,13 +47,19 @@ window.social = (() => {
       if (st.incoming.length > before) { toast(`${st.incoming[st.incoming.length - 1].username} sent you a friend request`); sfx.chime(); }
     });
     es.addEventListener('presence', e => {
-      const d = JSON.parse(e.data), f = st.friends.find(x => x.id === d.id);
+      const d = JSON.parse(e.data), f = who(d.id);
       if (f) { f.online = d.online; render(); }
     });
     es.addEventListener('typing', e => {
       const d = JSON.parse(e.data); st.typing[d.from] = Date.now();
       renderTyping(); setTimeout(renderTyping, 3600);
     });
+    es.addEventListener('duel', e => {
+      const d = JSON.parse(e.data);
+      if (d.type === 'invite') showDuelInvite(d, true);
+      else if (d.type === 'cancel') hideDuelInvite(d.id, d.reason);
+    });
+    es.addEventListener('open', () => api('/api/duel/invites').then(r => r.invites.forEach(i => showDuelInvite(i))).catch(() => {}));
     es.addEventListener('read', e => { const d = JSON.parse(e.data); st.theirRead[d.by] = d.t; if (st.open === d.by) renderMessages(); });
     // A 401 closes the stream for good (signed out elsewhere); anything else EventSource retries itself.
     es.onerror = () => { if (es.readyState === EventSource.CLOSED) { st.es = null; setTimeout(refresh, 5000); } };
@@ -55,8 +69,8 @@ window.social = (() => {
     const fid = d.with, m = d.message;
     const list = st.msgs[fid];
     if (list && !list.some(x => x.id === m.id)) list.push(m);
-    const f = st.friends.find(x => x.id === fid);
-    if (f) f.last = m;
+    const f = who(fid);
+    if (f) { f.last = m; delete f.draft; }
     delete st.typing[fid];
     const viewing = st.open === fid && app.active === 'friends' && !document.hidden;
     if (m.from !== st.me?.id) {
@@ -67,13 +81,14 @@ window.social = (() => {
         sfx.recv();
       }
     }
-    st.friends.sort((a, b) => (b.last?.t || 0) - (a.last?.t || 0));
+    const byLast = (a, b) => (b.last?.t || 0) - (a.last?.t || 0);
+    st.friends.sort(byLast); st.dms.sort(byLast);
     badge();
     if (app.active === 'friends') { renderList(); if (st.open === fid) renderMessages(true); }
   }
 
   function badge() {
-    const n = st.friends.reduce((a, f) => a + (f.unread || 0), 0) + st.incoming.length;
+    const n = people().reduce((a, f) => a + (f.unread || 0), 0) + st.incoming.length;
     document.querySelectorAll('[data-badge="friends"]').forEach(b => { b.textContent = n > 9 ? '9+' : n; b.hidden = !n; });
   }
 
@@ -135,13 +150,18 @@ window.social = (() => {
         <button class="btn primary sm" data-act="accept" data-id="${u.id}">Accept</button>
         <button class="icon-btn" data-act="decline" data-id="${u.id}" title="Decline" aria-label="Decline">${svg('i-x')}</button></div>`).join('');
     }
-    html += `<h3 class="fl-h">Friends <span class="count">${st.friends.length}</span></h3>`;
-    html += st.friends.length ? st.friends.map(f => `
+    const row = f => `
       <button class="fl-friend${st.open === f.id ? ' active' : ''}" data-open="${f.id}">
         <span class="av-wrap">${avatar(f, 38)}<i class="dot${f.online ? ' on' : ''}"></i></span>
         <span class="fl-fmain"><b>${esc(f.username)}${tag(f)}</b><small>${st.typing[f.id] && Date.now() - st.typing[f.id] < 3500 ? '<em>typing…</em>' : f.last ? esc((f.last.from === st.me.id ? 'You: ' : '') + f.last.text) : (f.online ? 'Online' : 'Say hi')}</small></span>
         ${f.unread ? `<span class="unread">${f.unread > 9 ? '9+' : f.unread}</span>` : f.last ? `<time>${time(f.last.t)}</time>` : ''}
-      </button>`).join('') : `<p class="fl-empty">No friends yet. Add someone by their username above.</p>`;
+      </button>`;
+    if (st.dms.length) {
+      html += `<h3 class="fl-h">${st.me.admin ? 'Direct messages' : 'Messages from admins'} <span class="count">${st.dms.length}</span></h3>`;
+      html += st.dms.map(row).join('');
+    }
+    html += `<h3 class="fl-h">Friends <span class="count">${st.friends.length}</span></h3>`;
+    html += st.friends.length ? st.friends.map(row).join('') : `<p class="fl-empty">No friends yet. Add someone by their username above.</p>`;
     if (st.outgoing.length) {
       html += `<h3 class="fl-h">Waiting on</h3>` + st.outgoing.map(u => `<div class="fl-req muted">${avatar(u, 28)}<b>${esc(u.username)}</b><small>Pending</small>
         <button class="icon-btn" data-act="decline" data-id="${u.id}" title="Cancel request" aria-label="Cancel request">${svg('i-x')}</button></div>`).join('');
@@ -155,7 +175,7 @@ window.social = (() => {
 
   function renderChat() {
     const box = document.getElementById('fl-chat'); if (!box) return;
-    const f = st.friends.find(x => x.id === st.open);
+    const f = who(st.open);
     if (!f) {
       box.innerHTML = `<div class="fl-center"><div class="fl-hello">${svg('i-users')}<h2>${st.friends.length ? 'Pick a friend to chat' : 'Add your friends'}</h2><p>${st.friends.length ? 'Messages show up here instantly.' : 'Ask them for their username, type it on the left, and they’ll get a request.'}</p></div></div>`;
       return;
@@ -165,14 +185,15 @@ window.social = (() => {
         <button class="icon-btn fl-back" data-act="back" aria-label="Back">${svg('i-back')}</button>
         <span class="av-wrap">${avatar(f, 34)}<i class="dot${f.online ? ' on' : ''}"></i></span>
         <div><b>${esc(f.username)}${tag(f)}</b><small id="fl-sub">${f.online ? 'Online' : 'Offline'}</small></div>
-        <button class="icon-btn" data-act="friendmenu" data-id="${f.id}" aria-label="More">${svg('i-dots')}</button>
+        ${st.friends.includes(f) ? `<button class="btn sm duel-btn" data-act="duel" data-id="${f.id}" ${f.online ? '' : 'disabled title="They need to be online"'}>${svg('i-duel')}<span>Challenge</span></button>` : ''}
+        ${st.friends.includes(f) ? `<button class="icon-btn" data-act="friendmenu" data-id="${f.id}" aria-label="More">${svg('i-dots')}</button>` : ''}
       </header>
       <div class="fl-msgs" id="fl-msgs"><div class="fl-center"><div class="spinner"></div></div></div>
       <form class="fl-compose" data-form="send">
         <textarea name="text" rows="1" placeholder="Message ${esc(f.username)}" maxlength="1000"></textarea>
         <button class="send" type="submit" aria-label="Send">${svg('i-send')}</button>
       </form>`;
-    if (st.msgs[f.id]) renderMessages(true); else loadMessages(f.id);
+    if (st.msgs[f.id]) renderMessages(true); else if (f.draft) { st.msgs[f.id] = []; renderMessages(true); } else loadMessages(f.id);
     renderTyping();
   }
 
@@ -199,7 +220,7 @@ window.social = (() => {
 
   function renderTyping() {
     const sub = document.getElementById('fl-sub'); if (!sub || !st.open) return;
-    const f = st.friends.find(x => x.id === st.open); if (!f) return;
+    const f = who(st.open); if (!f) return;
     const typing = st.typing[st.open] && Date.now() - st.typing[st.open] < 3500;
     sub.innerHTML = typing ? '<em>typing…</em>' : f.online ? 'Online' : 'Offline';
     if (app.active === 'friends') renderList();
@@ -215,7 +236,8 @@ window.social = (() => {
     } catch (e) { toast(e.message, 'err'); }
   }
   function markRead(fid) {
-    const f = st.friends.find(x => x.id === fid);
+    const f = who(fid);
+    if (f?.draft) return;
     if (f && f.unread) { f.unread = 0; badge(); renderList(); }
     api(`/api/messages/${fid}/read`, { method: 'POST' }).catch(() => {});
   }
@@ -237,7 +259,7 @@ window.social = (() => {
       const list = st.msgs[fid];
       const i = list.indexOf(temp);
       if (list.some(m => m.id === message.id)) list.splice(i, 1); else list[i] = message;
-      const f = st.friends.find(x => x.id === fid); if (f) f.last = message;
+      const f = who(fid); if (f) { f.last = message; delete f.draft; }
     } catch (e) {
       st.msgs[fid] = st.msgs[fid].filter(m => m !== temp);
       toast(e.message, 'err');
@@ -247,9 +269,9 @@ window.social = (() => {
 
   async function act(action, id, extra) {
     try {
-      if (action === 'logout') { await api('/api/auth/logout', { method: 'POST' }); st.me = null; document.documentElement.classList.remove('is-admin'); st.open = null; st.msgs = {}; connect(); render(); renderSettings(); badge(); toast('Signed out'); return; }
-      if (action === 'block' && !confirm('Block them? They’ll be removed from your friends and can’t add you again.')) return;
-      if (action === 'remove' && !confirm('Remove this friend?')) return;
+      if (action === 'logout') { await api('/api/auth/logout', { method: 'POST' }); st.me = null; document.documentElement.classList.remove('is-admin'); st.open = null; st.msgs = {}; connect(); render(); renderSettings(); badge(); toast('Signed out'); window.account?.afterLogout(); return; }
+      if (action === 'block' && !(await ui.confirm({ title: 'Block them?', message: 'They’ll be removed from your friends and can’t send you requests or messages.', confirmText: 'Block', danger: true }))) return;
+      if (action === 'remove' && !(await ui.confirm({ title: 'Remove this friend?', message: 'You can add each other again later.', confirmText: 'Remove', danger: true }))) return;
       apply(await api(`/api/friends/${id}/${action}`, { method: 'POST' }));
       if (action === 'accept') { toast('Friend added', 'ok'); }
       render();
@@ -292,12 +314,55 @@ window.social = (() => {
     const action = a.dataset.act;
     if (action === 'back') { st.open = null; document.querySelector('.fl')?.classList.remove('conv-open'); renderList(); renderChat(); return; }
     if (action === 'older') { const list = st.msgs[st.open] || []; return loadMessages(st.open, list[0]?.t); }
+    if (action === 'duel') {
+      const m = document.getElementById('menu-duel'); m.dataset.id = a.dataset.id;
+      const rc = a.getBoundingClientRect(); placeMenu(m, rc.right, rc.bottom + 6, true); sfx.tick(); return;
+    }
     if (action === 'friendmenu') {
       const m = document.getElementById('menu-friend'); m.dataset.id = a.dataset.id;
       const rc = a.getBoundingClientRect(); placeMenu(m, rc.right, rc.bottom + 6, true); sfx.tick(); return;
     }
     act(action, a.dataset.id);
   });
+  /* ── Duels invites ── */
+  document.getElementById('menu-duel').addEventListener('click', async e => {
+    const b = e.target.closest('[data-rounds]'); if (!b) return;
+    const id = e.currentTarget.dataset.id; hideMenus();
+    try {
+      const r = await api('/api/duel/invite', { method: 'POST', body: { friendId: id, rounds: Number(b.dataset.rounds) } });
+      toast(`Challenge sent to ${who(id)?.username || 'your friend'}`, 'ok');
+      launchDuel('?match=' + r.id);
+    } catch (err) {
+      if (err.data?.id) return launchDuel('?match=' + err.data.id);
+      toast(err.message, 'err');
+    }
+  });
+  const invites = new Map(); // match id → element
+  function showDuelInvite(d, fresh) {
+    if (invites.has(d.id)) return;
+    let box = document.getElementById('duel-invites');
+    if (!box) { box = document.createElement('div'); box.id = 'duel-invites'; document.body.appendChild(box); }
+    const el = document.createElement('div');
+    el.className = 'duel-invite';
+    el.innerHTML = `${avatar(d.from, 40)}<div class="di-main"><b>${esc(d.from.username)} challenged you</b><small>Duels · first to ${d.rounds}</small></div>
+      <button class="btn sm" data-di="no">Decline</button><button class="btn primary sm" data-di="yes">Accept</button>`;
+    el.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-di]'); if (!b) return;
+      hideDuelInvite(d.id);
+      if (b.dataset.di === 'yes') launchDuel('?match=' + d.id);
+      else api(`/api/duel/${d.id}/decline`, { method: 'POST' }).catch(() => {});
+    });
+    box.appendChild(el);
+    invites.set(d.id, el);
+    if (fresh) sfx.chime();
+  }
+  function hideDuelInvite(id, reason) {
+    const el = invites.get(id); if (!el) return;
+    invites.delete(id);
+    el.classList.add('out'); setTimeout(() => el.remove(), 250);
+    if (reason === 'cancelled' || reason === 'expired') toast(reason === 'expired' ? 'A duel challenge expired' : 'The duel challenge was cancelled');
+  }
+
   document.getElementById('menu-friend').addEventListener('click', e => {
     const b = e.target.closest('[data-fact]'); if (!b) return;
     const id = e.currentTarget.dataset.id; hideMenus();
@@ -319,9 +384,11 @@ window.social = (() => {
   function renderSettings() {
     const box = document.getElementById('account-settings'); if (!box) return;
     box.innerHTML = st.me
-      ? `<div class="row"><div class="row-label"><b>Signed in as ${esc(st.me.username)}</b><small>Friends and chat</small></div><button class="btn" data-sact="logout">Sign out</button></div>
+      ? `<div class="row"><div class="row-label"><b>Signed in as ${esc(st.me.username)}</b><small>Friends, chat, and your saved stuff</small></div><button class="btn" data-sact="logout">Sign out</button></div>
+         <div class="row" id="sync-row"></div>
          <div class="row"><div class="row-label"><b>Delete account</b><small>Removes your account, friends and messages</small></div><button class="btn ghost danger" data-sact="delete">Delete</button></div>`
-      : `<div class="row"><div class="row-label"><b>Not signed in</b><small>Make an account to add friends and chat</small></div><button class="btn primary" data-sact="signin">Sign in</button></div>`;
+      : `<div class="row"><div class="row-label"><b>Not signed in</b><small>Sign in to chat with friends and keep your settings, favorites and chats on any computer</small></div><button class="btn primary" data-sact="signin">Sign in</button></div>`;
+    window.account?.paint();
   }
   document.getElementById('account-settings').addEventListener('click', async e => {
     const b = e.target.closest('[data-sact]'); if (!b) return;
@@ -329,7 +396,7 @@ window.social = (() => {
     if (a === 'signin') { closeSettings(); openFriends(); }
     if (a === 'logout') act('logout');
     if (a === 'delete') {
-      const pw = prompt('Type your password to delete your account. This can’t be undone.');
+      const pw = await ui.prompt({ title: 'Delete your account?', message: 'Your account, friends, messages and saved data are deleted for good. Type your password to confirm.', type: 'password', placeholder: 'Password', confirmText: 'Delete account' });
       if (!pw) return;
       try { await api('/api/account', { method: 'DELETE', body: { password: pw } }); st.me = null; st.open = null; connect(); render(); renderSettings(); badge(); toast('Account deleted'); }
       catch (err) { toast(err.message, 'err'); }
@@ -343,6 +410,15 @@ window.social = (() => {
     if (st.open) markRead(st.open);
   });
 
+  // Admins: open a chat with anyone (used by the Admin → Users "Message" button).
+  async function messageUser(u) {
+    if (!st.loaded) await refresh();
+    if (!st.me?.admin || u.id === st.me.id) return;
+    if (!who(u.id)) st.dms.unshift({ id: u.id, username: u.username, color: u.color, admin: u.admin, online: !!u.online, unread: 0, last: null, draft: true });
+    openFriends();
+    openConv(u.id);
+  }
+
   refresh();
-  return { refresh, state: st };
+  return { refresh, state: st, messageUser };
 })();

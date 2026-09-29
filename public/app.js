@@ -49,6 +49,7 @@ const steam = id => `https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/hea
 // fit: 'contain' for art that isn't card-shaped (logo strips, square icons), so nothing gets cropped.
 const GAMES = [
   { id: 'minecraft',   name: 'Minecraft',              tag: 'Sandbox',    src: '/games/minecraft/index.html',       thumb: 'img/minecraft.png', fit: 'contain', desc: 'EaglercraftX 1.8 (u53). Singleplayer, LAN worlds, and servers.', heavy: '11–30 MB' },
+  { id: 'duel',        name: 'Duels',                  tag: 'Multiplayer', src: '/games/duel/',                    thumb: 'img/duels.svg', desc: '1v1 a friend. Lose a round, pick a card. Challenge from Friends.' },
   { id: 'brotato',     name: 'Brotato',                tag: 'Roguelite',  src: '/games/brotato.html',               thumb: steam(1942280), desc: "You're a potato holding six guns. Survive the waves." },
   { id: 'terraria',    name: 'Terraria',               tag: 'Adventure',  src: '/games/terraria.html',              thumb: steam(105600),  desc: 'Dig, build, fight bosses. The 2D one everyone loves.' },
   { id: 'buckshot',    name: 'Buckshot Roulette',      tag: 'Horror',     src: '/games/buckshot_roulette.html',     thumb: steam(2835570), desc: 'Russian roulette with a shotgun and a very strange dealer.' },
@@ -87,6 +88,8 @@ const app = {
   reqAll: false, reqList: [],
 };
 const saveCfg = () => store.set('uos-cfg', cfg);
+// New games get added to favorites once for people who already have a saved list.
+if (!store.get('uos-seen-duel', false)) { if (!app.favs.includes('duel')) app.favs.unshift('duel'); store.set('uos-favs', app.favs); store.set('uos-seen-duel', true); }
 sfx.enabled = cfg.sound !== false;
 
 /* ═══════════════ Helpers ═══════════════ */
@@ -495,6 +498,12 @@ function relayHotkeys(frame) {
     if (!w || w.__uosRelay) return;
     w.__uosRelay = true;
     w.addEventListener('keydown', e => { if (e.altKey && handleHotkey(e)) e.preventDefault(); }, true);
+    // Games like Minecraft cancel mousedown, which stops the browser from giving the frame
+    // keyboard focus when you click back into it. Hand focus over ourselves.
+    w.addEventListener('pointerdown', () => {
+      if (document.activeElement === frame && w.document.hasFocus()) return;
+      try { frame.focus(); w.focus(); } catch {}
+    }, true);
   } catch {}
 }
 
@@ -1253,7 +1262,13 @@ function launchGame(g) {
   const before = app.active;
   showView('game-' + key);
   if (before !== app.active) sfx.launch();
-  remember({ type: 'game', id: g.id, url: g.src, label: g.name, game: g.extra ? { id: g.id, name: g.name, src: g.src, thumb: g.thumb, tag: 'Extra', extra: true } : undefined });
+  remember({ type: 'game', id: g.id, url: g.home || g.src, label: g.name, game: g.extra ? { id: g.id, name: g.name, src: g.src, thumb: g.thumb, tag: 'Extra', extra: true } : undefined });
+}
+
+// Duels with a match or invite in the URL ("?match=abc", "?invite=<friendId>").
+function launchDuel(query = '') {
+  const g = GAMES.find(x => x.id === 'duel');
+  launchGame({ ...g, src: g.src + query, home: g.src });
 }
 
 // Keyboard events only reach an iframe that has focus. Hand focus to the game once it loads,
@@ -1444,8 +1459,8 @@ function togSetting(key) {
   saveCfg();
 }
 function setEngine(v) { cfg.engine = v; saveCfg(); }
-function resetAll() {
-  if (!confirm('Reset all settings, shortcuts, bookmarks and history on this browser?')) return;
+async function resetAll() {
+  if (!(await ui.confirm({ title: 'Reset everything?', message: 'Settings, shortcuts, bookmarks, favorites, history and chats on this browser are cleared. If you’re signed in, your account keeps its copy.', confirmText: 'Reset', danger: true }))) return;
   ['uos-cfg', 'uos-links', 'uos-recent', 'uos-ck', 'uos-history', 'uos-bookmarks'].forEach(k => {
     try { localStorage.removeItem(k); } catch {}
     document.cookie = `${k}=;max-age=0;path=/`;
