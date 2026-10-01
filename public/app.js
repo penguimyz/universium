@@ -1298,26 +1298,81 @@ async function loadRequests() {
     box.innerHTML = `<p class="empty small">${location.protocol === 'file:' ? 'Requests need the server running.' : "Couldn't load requests right now."}</p>`;
   }
 }
+// Replies open under a request; which ones are open survives re-renders.
+app.reqOpen = new Set();
+const agoShort = t => { const s = (Date.now() - t) / 1000; return s < 60 ? 'now' : s < 3600 ? Math.floor(s / 60) + 'm' : s < 86400 ? Math.floor(s / 3600) + 'h' : Math.floor(s / 86400) + 'd'; };
+function threadHtml(r) {
+  const me = window.social?.state?.me;
+  const replies = r.replies || [];
+  return `<div class="req-thread">
+    ${replies.length ? replies.map(rp => `
+      <div class="rp${rp.admin ? ' staff' : ''}">
+        <span class="av" style="--h:${rp.color ?? 260};--s:26px">${esc((rp.name || '?')[0].toUpperCase())}</span>
+        <div class="rp-main">
+          <div class="rp-head"><b>${esc(rp.name)}</b>${rp.admin ? '<em class="tag">Admin</em>' : ''}<time title="${new Date(rp.t).toLocaleString()}">${agoShort(rp.t)}</time></div>
+          <p>${esc(rp.text)}</p>
+        </div>
+        ${me && (me.id === rp.uid || me.admin) ? `<button class="icon-btn rp-del" data-delreply="${esc(r.id)}:${esc(rp.id)}" title="Delete reply" aria-label="Delete reply">${svg('i-x')}</button>` : ''}
+      </div>`).join('') : '<p class="rp-empty">No replies yet.</p>'}
+    ${me ? `<form class="rp-form" data-reply="${esc(r.id)}">
+        <input class="field" name="text" maxlength="300" placeholder="${me.admin ? 'Reply as admin…' : 'Write a reply…'}" autocomplete="off">
+        <button class="btn primary sm" type="submit">Reply</button>
+      </form>`
+      : `<p class="rp-empty">Sign in on the <button class="link-btn" type="button" onclick="openFriends()">Friends</button> page to reply.</p>`}
+  </div>`;
+}
 function renderRequests(list) {
   app.reqList = list;
   const shown = app.reqAll ? list.slice(0, 60) : list.slice(0, 5);
+  // Keep the open threads (and anything half-typed) visible even when they'd be cut off.
+  for (const id of app.reqOpen) { const r = list.find(x => x.id === id); if (r && !shown.includes(r)) shown.push(r); }
+  const drafts = {};
+  document.querySelectorAll('#requests .rp-form').forEach(f => { drafts[f.dataset.reply] = { v: f.text.value, focus: document.activeElement === f.text }; });
   const max = Math.max(1, ...list.map(r => r.votes));
   const t = $('req-toggle');
   t.hidden = list.length <= 5;
   t.textContent = app.reqAll ? 'Show less' : `See all ${list.length}`;
-  $('requests').innerHTML = shown.length ? shown.map((r, i) => `
-    <div class="req${r.status === 'added' ? ' added' : ''}" style="--i:${Math.min(i, 12)}">
-      <span class="req-rank">${i + 1}</span>
+  $('requests').innerHTML = shown.length ? shown.map((r, i) => {
+    const open = app.reqOpen.has(r.id), n = (r.replies || []).length, staff = (r.replies || []).some(x => x.admin);
+    return `
+    <div class="req${r.status === 'added' ? ' added' : ''}${open ? ' open' : ''}" style="--i:${Math.min(i, 12)}">
+      <span class="req-rank">${list.indexOf(r) + 1}</span>
       <div class="req-body">
         <b>${esc(r.name)}</b>${r.status === 'added' ? '<span class="req-badge">Added</span>' : ''}
         ${r.note ? `<small>${esc(r.note)}</small>` : ''}
         <span class="req-bar"><i style="width:${Math.round(r.votes / max * 100)}%"></i></span>
+        <button class="req-replies${staff ? ' staff' : ''}" data-thread="${esc(r.id)}" aria-expanded="${open}">${svg('i-chat')}${n ? `${n} repl${n === 1 ? 'y' : 'ies'}` : 'Reply'}${staff ? '<em>Admin replied</em>' : ''}</button>
       </div>
       <button class="vote${r.voted ? ' on' : ''}" data-vote="${esc(r.id)}" ${r.voted || r.status === 'added' ? 'disabled' : ''} aria-label="Vote for ${esc(r.name)}">${svg('i-up')}<b>${r.votes}</b></button>
-    </div>`).join('') : `<p class="empty small">No requests yet. Be the first.</p>`;
+      ${open ? threadHtml(r) : ''}
+    </div>`;
+  }).join('') : `<p class="empty small">No requests yet. Be the first.</p>`;
+  document.querySelectorAll('#requests .rp-form').forEach(f => { const d = drafts[f.dataset.reply]; if (d) { f.text.value = d.v; if (d.focus) f.text.focus(); } });
 }
 function toggleAllRequests() { app.reqAll = !app.reqAll; renderRequests(app.reqList || []); sfx.tick(); }
+async function reqApi(path, opts = {}) {
+  const r = await fetch(path, { credentials: 'same-origin', ...opts, headers: opts.body ? { 'Content-Type': 'application/json' } : {} });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
 $('requests').addEventListener('click', async e => {
+  const th = e.target.closest('[data-thread]');
+  if (th) {
+    const id = th.dataset.thread;
+    app.reqOpen.has(id) ? app.reqOpen.delete(id) : app.reqOpen.add(id);
+    renderRequests(app.reqList || []); sfx.tick();
+    if (app.reqOpen.has(id)) document.querySelector(`#requests .rp-form[data-reply="${CSS.escape(id)}"] input`)?.focus();
+    return;
+  }
+  const del = e.target.closest('[data-delreply]');
+  if (del) {
+    const [id, rid] = del.dataset.delreply.split(':');
+    if (!(await ui.confirm({ title: 'Delete this reply?', confirmText: 'Delete', danger: true }))) return;
+    try { renderRequests((await reqApi(`/api/game-requests/${encodeURIComponent(id)}/replies/${encodeURIComponent(rid)}`, { method: 'DELETE' })).requests || []); toast('Reply deleted'); }
+    catch (err) { toast(err.message, 'err'); }
+    return;
+  }
   const b = e.target.closest('[data-vote]'); if (!b || b.disabled) return;
   b.disabled = true; b.classList.add('on');
   const n = b.querySelector('b'); n.textContent = +n.textContent + 1;
@@ -1329,6 +1384,26 @@ $('requests').addEventListener('click', async e => {
     renderRequests(data.requests || []);
   } catch (err) { toast(err.message || "Your vote didn't go through", 'err'); loadRequests(); }
 });
+$('requests').addEventListener('submit', async e => {
+  const f = e.target.closest('[data-reply]'); if (!f) return;
+  e.preventDefault();
+  const text = f.text.value.trim(); if (!text) return f.text.focus();
+  const btn = f.querySelector('button'); btn.disabled = true;
+  try {
+    const d = await reqApi(`/api/game-requests/${encodeURIComponent(f.dataset.reply)}/replies`, { method: 'POST', body: JSON.stringify({ text }) });
+    f.text.value = '';
+    renderRequests(d.requests || []); sfx.send?.();
+    document.querySelector(`#requests .rp-form[data-reply="${CSS.escape(f.dataset.reply)}"] input`)?.focus();
+  } catch (err) { toast(err.message, 'err'); btn.disabled = false; }
+});
+// Someone replied on a request I asked for or replied to.
+function onRequestNotice(d) {
+  if (d.kind !== 'reqreply') return;
+  toast(`${d.from}${d.admin ? ' (admin)' : ''} replied ${d.mine ? 'to your request for' : 'on'} ${d.game}: "${d.text}"`);
+  sfx.chime();
+  app.reqOpen.add(d.id);
+  if (app.active === 'games') loadRequests();
+}
 
 function openRequest() {
   $('req-scrim').hidden = false; restart($('req-scrim'), 'enter');

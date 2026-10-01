@@ -1,10 +1,10 @@
 /* Account sync.
    While signed in, these follow you to any computer: settings (theme, background, desktop mode…),
-   shortcuts, favorites, bookmarks, history, recently played and AI chats.
+   shortcuts, favorites, bookmarks, history, recently played, AI chats, notes and calendar events.
    How it works: every save to one of those keys marks the data "dirty" and uploads it a few
    seconds later. On sign-in the newer copy wins (account vs this browser). */
 window.account = (() => {
-  const KEYS = ['uos-cfg', 'uos-links', 'uos-favs', 'uos-bookmarks', 'uos-history', 'uos-recent', 'uos-chats'];
+  const KEYS = ['uos-cfg', 'uos-links', 'uos-favs', 'uos-bookmarks', 'uos-history', 'uos-recent', 'uos-chats', 'uos-notes', 'uos-calendar'];
   const META = 'uos-sync';
   let user = null, timer = 0, syncing = false;
 

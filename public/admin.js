@@ -66,7 +66,7 @@
           <div class="adm-row${r.status === 'added' ? ' done' : ''}">
             <span class="adm-votes"><b>${r.votes}</b><small>votes</small></span>
             <div class="adm-main"><b>${esc(r.name)}${r.status === 'added' ? ' <em class="tag ok">Added</em>' : ''}</b>
-              <small>${ago(r.createdAt)}${r.note ? ' · ' + esc(r.note) : ''}</small>
+              <small>${ago(r.createdAt)}${r.replies?.length ? ` · ${r.replies.length} repl${r.replies.length === 1 ? 'y' : 'ies'}` : ''}${r.note ? ' · ' + esc(r.note) : ''}</small>
               ${r.link ? `<a href="#" data-a="open" data-url="${esc(r.link)}">${esc(r.link)}</a>` : ''}</div>
             <button class="btn sm" data-a="status" data-id="${r.id}" data-to="${r.status === 'added' ? 'open' : 'added'}">${r.status === 'added' ? 'Reopen' : 'Mark added'}</button>
             <button class="icon-btn" data-a="delreq" data-id="${r.id}" data-name="${esc(r.name)}" title="Delete" aria-label="Delete">${svg('i-x')}</button>

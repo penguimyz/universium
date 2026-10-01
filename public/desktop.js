@@ -1,7 +1,7 @@
 /* Desktop mode: makes the site look and feel like a PC.
    - Taskbar with a start menu, pinned apps, running tabs/games and a clock
-   - Home becomes a desktop with icons (double-click to open)
-   - Everything else opens in a window with maximize/close buttons
+   - Home becomes a desktop with icons (click to open)
+   - Site pages open in the main window; small apps (apps.js) open in their own movable windows
    Uses helpers from app.js. Turned on in Settings → Desktop mode. */
 window.desktop = (() => {
   const APPS = [
@@ -14,6 +14,8 @@ window.desktop = (() => {
     { id: 'admin',     name: 'Admin',        icon: 'i-shield',  open: () => openAdmin(), adminOnly: true },
     { id: 'settings',  name: 'Settings',     icon: 'i-gear',    open: () => openSettings() },
     { id: 'blank',     name: 'about:blank',  icon: 'i-eye',     open: () => openBlank() },
+    // Small apps in their own windows (apps.js)
+    ...Object.entries(window.winapps?.apps || {}).map(([id, a]) => ({ id, name: a.name, icon: a.icon, tint: a.tint, mini: true, open: () => winapps.open(id) })),
   ];
   const PINNED = ['games', 'movies', 'browser', 'assistant', 'friends'];
   const TITLES = { admin: 'Admin', games: 'Games', movies: 'Movies & TV', assistant: 'Chat', friends: 'Friends', history: 'History' };
@@ -42,7 +44,9 @@ window.desktop = (() => {
     <div class="sm-results" id="sm-results" hidden></div>
     <div class="sm-body" id="sm-body">
       <h3>Apps</h3>
-      <div class="sm-apps">${APPS.map(a => `<button data-app="${a.id}"${a.adminOnly ? ' class="admin-only"' : ''}><span>${svg(a.icon)}</span>${a.name}</button>`).join('')}</div>
+      <div class="sm-apps">${APPS.filter(a => !a.mini).map(a => `<button data-app="${a.id}"${a.adminOnly ? ' class="admin-only"' : ''}><span>${svg(a.icon)}</span>${a.name}</button>`).join('')}</div>
+      <h3>Tools</h3>
+      <div class="sm-apps">${APPS.filter(a => a.mini).map(a => `<button data-app="${a.id}"><span style="--tint:${a.tint}" class="tinted">${svg(a.icon)}</span>${a.name}</button>`).join('')}</div>
       <h3>Favorite games</h3>
       <div class="sm-games" id="sm-games"></div>
     </div>
@@ -66,10 +70,10 @@ window.desktop = (() => {
     const links = allLinks().slice(0, 12);
     desk.innerHTML = `
       <div class="desk-icons" id="desk-icons">
-        ${APPS.filter(a => a.id !== 'blank').map(a => `<button class="dicon${a.adminOnly ? ' admin-only' : ''}" data-app="${a.id}"><span class="dicon-img is-app">${svg(a.icon)}</span><span class="dicon-label">${a.name}</span></button>`).join('')}
+        ${APPS.filter(a => a.id !== 'blank').map(a => `<button class="dicon${a.adminOnly ? ' admin-only' : ''}" data-app="${a.id}"><span class="dicon-img is-app"${a.tint ? ` style="--tint:${a.tint}"` : ''}>${svg(a.icon)}</span><span class="dicon-label">${a.name}</span></button>`).join('')}
         ${links.map(l => `<button class="dicon" data-url="${esc(l.url)}"><span class="dicon-img"><img src="${fav(hostOf(l.url))}" alt="" onerror="this.remove()"></span><span class="dicon-label">${esc(l.label)}</span></button>`).join('')}
       </div>
-      <div class="desk-widget"><b id="dw-time"></b><span id="dw-date"></span><small>Double-click an icon to open it</small></div>`;
+      <div class="desk-widget"><b id="dw-time"></b><span id="dw-date"></span><small>Click an icon to open it</small></div>`;
     tick();
   }
   function renderStartGames() {
@@ -87,7 +91,8 @@ window.desktop = (() => {
       const g = findGame(app.active.slice(5)) || GAMES.find(x => 'game-' + x.id.replace(/[^a-z0-9_-]/gi, '_') === app.active);
       if (g) items.push({ id: app.active, title: g.name, icon: 'i-games' });
     }
-    box.innerHTML = items.map(it => `<button class="tb-run${it.id === app.active ? ' active' : ''}" data-run="${it.id}" title="${esc(it.title)}">
+    for (const w of window.winapps?.list() || []) items.push({ id: 'fw:' + w.id, title: w.name, icon: w.icon, active: w.active, min: w.min });
+    box.innerHTML = items.map(it => `<button class="tb-run${(it.id.startsWith('fw:') ? it.active : it.id === app.active) ? ' active' : ''}${it.min ? ' min' : ''}" data-run="${it.id}" title="${esc(it.title)}">
       ${it.img ? `<img src="${esc(it.img)}" alt="" onerror="this.remove()">` : svg(it.icon)}<span>${esc(it.title)}</span></button>`).join('');
   }
   function tick() {
@@ -163,11 +168,12 @@ window.desktop = (() => {
 
   /* ── events ── */
   document.getElementById('tb-start').addEventListener('click', e => { e.stopPropagation(); start.hidden ? openStart() : closeStart(); });
-  document.getElementById('tb-clock').addEventListener('click', () => goHome());
+  document.getElementById('tb-clock').addEventListener('click', () => { window.winapps?.minimizeAll(); goHome(); });
   taskbar.addEventListener('click', e => {
     const a = e.target.closest('.tb-app'); if (a) return openApp(a.dataset.app);
     const r = e.target.closest('[data-run]'); if (!r) return;
     const id = r.dataset.run;
+    if (id.startsWith('fw:')) return winapps.toggle(id.slice(3));
     if (id === app.active) goHome(); // clicking the active item minimizes, like a real taskbar
     else if (id.startsWith('t')) switchTab(id);
     else { const g = findGame(id.slice(5)); if (g) launchGame(g); }
@@ -183,16 +189,15 @@ window.desktop = (() => {
   });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeStart(); });
 
-  // Desktop icons: click selects, double-click opens (single tap on touch screens).
+  // Desktop icons open with a single click (Enter works too, since they're buttons).
   const openIcon = el => el.dataset.app ? openApp(el.dataset.app) : go(el.dataset.url);
   desk.addEventListener('click', e => {
     const d = e.target.closest('.dicon'); if (!d) return;
     desk.querySelectorAll('.dicon.sel').forEach(x => x.classList.remove('sel'));
     d.classList.add('sel'); selected = d;
-    if (e.pointerType === 'touch' || matchMedia('(pointer: coarse)').matches) openIcon(d);
+    restart(d, 'launch');
+    openIcon(d);
   });
-  desk.addEventListener('dblclick', e => { const d = e.target.closest('.dicon'); if (d) openIcon(d); });
-  desk.addEventListener('keydown', e => { const d = e.target.closest('.dicon'); if (d && e.key === 'Enter') openIcon(d); });
 
   winbar.addEventListener('click', e => {
     const b = e.target.closest('[data-win]'); if (!b) return;
@@ -207,5 +212,5 @@ window.desktop = (() => {
   winbar.addEventListener('dblclick', e => { if (!e.target.closest('[data-win]')) { document.documentElement.classList.toggle('win-max'); dispatchEvent(new Event('resize')); } });
 
   apply(cfg.desktop);
-  return { apply, sync, renderRunning };
+  return { apply, sync, renderRunning, open: openApp, apps: () => APPS.map(({ id, name }) => ({ id, name })) };
 })();

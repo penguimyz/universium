@@ -27,7 +27,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const bare = createBareServer("/bare/");
 const app = express();
 // Bump on each release; shown in Settings so you can tell which build is live.
-const VERSION = "2026.09.29-13";
+const VERSION = "2026.10.01-1";
 const STARTED_AT = Date.now();
 app.disable("x-powered-by");
 
@@ -435,7 +435,14 @@ app.use(express.json({ limit: "2mb" })); // room for synced account data
 
 // ── Extras (games from a GitHub repo) and game requests ─────────────────────
 registerExtras(app, { proxyFile, swSuppressor: SW_SUPPRESSOR });
-const requestsApi = registerRequests(app, { rootDir: __dirname });
+// Replies on game requests need accounts; the getters run per request, after accounts exist.
+const requestsApi = registerRequests(app, {
+  rootDir: __dirname,
+  user: req => accountsApi.userFrom(req),
+  isAdminName: name => accountsApi.isAdminName(name),
+  notify: (uid, type, data) => accountsApi.send(uid, type, data),
+  ready: { then: (ok, bad) => accountsApi.ready.then(ok, bad) },
+});
 const accountsApi = registerAccounts(app, { rootDir: __dirname });
 const duel = registerDuel(app, { accounts: accountsApi });
 registerAdmin(app, { accounts: accountsApi, requests: requestsApi, rootDir: __dirname, aiStatus: () => aiStatus(), version: VERSION, startedAt: STARTED_AT });

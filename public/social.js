@@ -27,6 +27,7 @@ window.social = (() => {
     window.account?.onUser(d.user); st.incoming = d.incoming || []; st.outgoing = d.outgoing || []; st.blocked = d.blocked || [];
     if (st.open && !who(st.open)) st.open = null;
     badge();
+    if (app.reqList?.length) renderRequests(app.reqList); // reply box vs "sign in to reply"
   }
   async function refresh() {
     try { apply(await api('/api/me')); }
@@ -60,6 +61,7 @@ window.social = (() => {
       else if (d.type === 'cancel') hideDuelInvite(d.id, d.reason);
     });
     es.addEventListener('open', () => api('/api/duel/invites').then(r => r.invites.forEach(i => showDuelInvite(i))).catch(() => {}));
+    es.addEventListener('notice', e => window.onRequestNotice?.(JSON.parse(e.data)));
     es.addEventListener('read', e => { const d = JSON.parse(e.data); st.theirRead[d.by] = d.t; if (st.open === d.by) renderMessages(); });
     // A 401 closes the stream for good (signed out elsewhere); anything else EventSource retries itself.
     es.onerror = () => { if (es.readyState === EventSource.CLOSED) { st.es = null; setTimeout(refresh, 5000); } };
