@@ -60,6 +60,7 @@ const GAMES = [
   { id: 'cookie',      name: 'Cookie Clicker',         tag: 'Idle',       src: '/games/cookie_clicker.html',        thumb: steam(1454400), desc: 'Click the cookie. Or let the auto clicker do it.' },
   { id: 'bloons',      name: 'Bloons TD 5',            tag: 'Strategy',   src: '/games/bloons_td5.html',            thumb: steam(306020),  desc: 'Place monkeys, pop balloons, lose to the MOAB.' },
   { id: 'retrobowl',   name: 'Retro Bowl',             tag: 'Sports',     src: '/games/retro_bowl.html',            thumb: 'img/retro_bowl.png', fit: 'contain', desc: 'Run a football team and throw the passes yourself.' },
+  { id: 'liquidsoccer', name: 'Super Liquid Soccer',   tag: 'Sports',     src: '/games/super_liquid_soccer.html',   thumb: 'img/super_liquid_soccer.png', noFav: true, desc: 'Arcade soccer. Dribble, shoot and outscore the other team.', heavy: '28 MB' },
   { id: 'basket',      name: 'Basket Bros',            tag: 'Sports',     src: '/games/basket_bros.html',           thumb: 'img/basket_bros.png', desc: 'Chaotic 1v1 basketball. Great with a friend on one keyboard.' },
   { id: 'bitlife',     name: 'BitLife',                tag: 'Simulation', src: '/games/bitlife.html',               thumb: 'img/bitlife.png', fit: 'contain', desc: 'Live a whole life in text. Make terrible choices.' },
   { id: 'cloverpit',   name: 'CloverPit',              tag: 'Roguelite',  src: '/games/clover_pit.html',            thumb: 'img/clover_pit.png', fit: 'contain', desc: 'A slot machine in a cell. Pay the debt or else.' },
@@ -84,7 +85,7 @@ const app = {
   gameFilter: { q: '', tag: 'All' },
   extras: null, extrasShown: EXTRAS_PAGE, extrasErr: '',
   frameZoom: {},
-  favs: store.get('uos-favs', null) || GAMES.map(g => g.id),
+  favs: store.get('uos-favs', null) || GAMES.filter(g => !g.noFav).map(g => g.id),
   reqAll: false, reqList: [],
 };
 const saveCfg = () => store.set('uos-cfg', cfg);

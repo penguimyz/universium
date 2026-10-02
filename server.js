@@ -27,7 +27,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const bare = createBareServer("/bare/");
 const app = express();
 // Bump on each release; shown in Settings so you can tell which build is live.
-const VERSION = "2026.10.01-1";
+const VERSION = "2026.10.02-1";
 const STARTED_AT = Date.now();
 app.disable("x-powered-by");
 
