@@ -62,12 +62,13 @@ window.tools = (() => {
 
   /* ── What's new ── newest first. Add a line here with each release. */
   const UPDATES = [
-    { v: '2026.10.06', date: 'Oct 6', title: 'Duels makeover and a Tools menu', items: [
+    { v: '2026.10.06-2', date: 'Oct 6', title: 'Duels makeover and a Tools menu', items: [
       'Duels looks a lot more like ROUNDS: flat colored arenas, round little players, glowing bullets and cards',
       'Duels menus match the rest of Universium',
       'The practice bot is easier: it reacts slower, misses more and rarely blocks',
       'New Tools button in the sidebar opens Calculator, Notes, Paint and the rest anywhere, not just in desktop mode',
       'This What\'s new card',
+      'Kiwi Clicker now loads through the proxy, so it works on school Chromebooks, and its card shows the actual bird',
     ] },
     { v: '2026.10.05', date: 'Oct 5', title: 'Snip & solve, Kiwi Clicker', items: [
       'Snip & solve: drag a box around a problem (Alt+S) and the AI explains the answer',

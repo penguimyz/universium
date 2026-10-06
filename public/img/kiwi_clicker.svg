@@ -1,32 +1,43 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 215">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f3a1a"/><stop offset=".6" stop-color="#14220f"/><stop offset="1" stop-color="#0c120a"/></linearGradient>
-    <radialGradient id="spot" cx=".5" cy=".45" r=".55"><stop offset="0" stop-color="#b7e86a" stop-opacity=".35"/><stop offset="1" stop-color="#b7e86a" stop-opacity="0"/></radialGradient>
-    <radialGradient id="flesh" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#e9f7b0"/><stop offset=".35" stop-color="#a8d84a"/><stop offset="1" stop-color="#6fae24"/></radialGradient>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7cc4e8"/><stop offset=".7" stop-color="#bfe6f2"/><stop offset="1" stop-color="#d9f0e2"/></linearGradient>
+    <radialGradient id="body" cx=".38" cy=".3" r=".8"><stop offset="0" stop-color="#b58a5c"/><stop offset=".55" stop-color="#8a6239"/><stop offset="1" stop-color="#5e4024"/></radialGradient>
   </defs>
   <rect width="460" height="215" fill="url(#bg)"/>
-  <rect width="460" height="215" fill="url(#spot)"/>
-  <!-- kiwi slice -->
-  <g transform="translate(230 107)">
-    <circle r="78" fill="#6b4a26"/>
-    <circle r="71" fill="url(#flesh)"/>
-    <ellipse rx="20" ry="18" fill="#f4fbd8"/>
-    <g fill="#1d1408">
-      <ellipse cx="0" cy="-30" rx="2.6" ry="5"/><ellipse cx="0" cy="30" rx="2.6" ry="5"/>
-      <ellipse cx="-30" cy="0" rx="5" ry="2.6"/><ellipse cx="30" cy="0" rx="5" ry="2.6"/>
-      <ellipse cx="21" cy="-21" rx="2.6" ry="5" transform="rotate(45 21 -21)"/><ellipse cx="-21" cy="21" rx="2.6" ry="5" transform="rotate(45 -21 21)"/>
-      <ellipse cx="-21" cy="-21" rx="2.6" ry="5" transform="rotate(-45 -21 -21)"/><ellipse cx="21" cy="21" rx="2.6" ry="5" transform="rotate(-45 21 21)"/>
-      <ellipse cx="11" cy="-28" rx="2.2" ry="4.4" transform="rotate(22 11 -28)"/><ellipse cx="-11" cy="28" rx="2.2" ry="4.4" transform="rotate(22 -11 28)"/>
-      <ellipse cx="-11" cy="-28" rx="2.2" ry="4.4" transform="rotate(-22 -11 -28)"/><ellipse cx="11" cy="28" rx="2.2" ry="4.4" transform="rotate(-22 11 28)"/>
-      <ellipse cx="28" cy="-11" rx="4.4" ry="2.2" transform="rotate(-22 28 -11)"/><ellipse cx="-28" cy="11" rx="4.4" ry="2.2" transform="rotate(-22 -28 11)"/>
-      <ellipse cx="28" cy="11" rx="4.4" ry="2.2" transform="rotate(22 28 11)"/><ellipse cx="-28" cy="-11" rx="4.4" ry="2.2" transform="rotate(22 -28 -11)"/>
-    </g>
+  <!-- hills -->
+  <path d="M0 160 Q90 120 180 150 T360 140 T460 150 V215 H0 Z" fill="#7bbf5a"/>
+  <path d="M0 185 Q120 160 240 178 T460 172 V215 H0 Z" fill="#5fa641"/>
+  <!-- grass tufts -->
+  <g stroke="#4c8f33" stroke-width="2.5" stroke-linecap="round" fill="none">
+    <path d="M60 192 l-3 -9 M64 192 l1 -10 M68 192 l4 -8"/><path d="M390 186 l-3 -9 M394 186 l1 -10 M398 186 l4 -8"/>
   </g>
+  <!-- shadow -->
+  <ellipse cx="226" cy="186" rx="70" ry="9" fill="#2f5e22" opacity=".35"/>
+  <!-- legs -->
+  <g stroke="#e0a64a" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M206 160 L200 184 M200 184 l-12 3 M200 184 l2 4 M200 184 l12 2"/>
+    <path d="M238 162 L240 184 M240 184 l-12 2 M240 184 l2 4 M240 184 l12 3"/>
+  </g>
+  <!-- body: a round fuzzy kiwi -->
+  <ellipse cx="222" cy="122" rx="66" ry="50" fill="url(#body)"/>
+  <g stroke="#4a321b" stroke-width="2" stroke-linecap="round" opacity=".45" fill="none">
+    <path d="M180 105 q6 4 4 10"/><path d="M200 92 q6 4 4 10"/><path d="M228 88 q6 4 4 10"/><path d="M252 96 q6 4 4 10"/>
+    <path d="M190 135 q6 4 4 10"/><path d="M216 120 q6 4 4 10"/><path d="M244 128 q6 4 4 10"/><path d="M266 118 q6 4 4 10"/><path d="M226 150 q6 4 4 10"/>
+  </g>
+  <!-- head -->
+  <circle cx="284" cy="96" r="26" fill="#8a6239"/>
+  <circle cx="280" cy="90" r="20" fill="#9a7047"/>
+  <!-- long thin beak -->
+  <path d="M302 98 Q350 112 386 150" stroke="#f1d9a8" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <path d="M302 98 Q350 112 386 150" stroke="#d7b57c" stroke-width="2" stroke-linecap="round" fill="none" transform="translate(0 2)"/>
+  <!-- eye -->
+  <circle cx="292" cy="88" r="5" fill="#1b130b"/>
+  <circle cx="293.5" cy="86.5" r="1.6" fill="#fff"/>
   <!-- click sparks -->
-  <g stroke="#e9f7b0" stroke-width="5" stroke-linecap="round" opacity=".85">
-    <line x1="330" y1="52" x2="348" y2="38"/><line x1="338" y1="80" x2="362" y2="78"/><line x1="318" y1="34" x2="322" y2="14"/>
+  <g stroke="#fff" stroke-width="4" stroke-linecap="round" opacity=".9">
+    <line x1="150" y1="64" x2="138" y2="50"/><line x1="140" y1="88" x2="122" y2="86"/><line x1="166" y1="50" x2="164" y2="34"/>
   </g>
-  <g fill="#e9f7b0" font-family="system-ui, sans-serif" font-weight="800" opacity=".9">
-    <text x="92" y="66" font-size="22">+1</text><text x="352" y="170" font-size="18">+5</text><text x="70" y="168" font-size="16">+2</text>
+  <g font-family="system-ui, sans-serif" font-weight="800" fill="#fff" stroke="#3b7a2a" stroke-width="3" paint-order="stroke">
+    <text x="96" y="58" font-size="22">+1</text><text x="352" y="70" font-size="18">+5</text>
   </g>
 </svg>
