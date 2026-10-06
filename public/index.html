@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://www.google.com">
 <link rel="preconnect" href="https://cdn.cloudflare.steamstatic.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@600;800&display=swap">
-<link rel="stylesheet" href="app.css?v=2026.10.05-2">
+<link rel="stylesheet" href="app.css?v=2026.10.06-1">
 <script>
   // Apply the saved sidebar state before first paint so it doesn't jump.
   try { if (JSON.parse(localStorage.getItem('uos-cfg') || '{}').railOpen === false) document.documentElement.classList.add('rail-collapsed'); } catch {}
@@ -83,6 +83,7 @@
     <symbol id="i-min" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 12h12"/></symbol>
     <symbol id="i-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/></symbol>
     <symbol id="i-stop" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2.5"/></symbol>
+    <symbol id="i-tools" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><path d="M17 13.5v7M13.5 17h7"/></symbol>
     <symbol id="i-flag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M5 21V4M5 4h11l-2 4 2 4H5"/></symbol>
     <!-- Logo: a ringed planet. The ring's front arc is cut out of the planet so it reads at 16px. -->
     <symbol id="mark" viewBox="0 0 48 48">
@@ -112,6 +113,7 @@
     <button class="rail-btn" data-nav="friends" onclick="openFriends()"><svg><use href="#i-users"/></svg><span class="rail-label">Friends</span><span class="badge" data-badge="friends" hidden></span></button>
     <button class="rail-btn admin-only" data-nav="admin" onclick="openAdmin()"><svg><use href="#i-shield"/></svg><span class="rail-label">Admin</span></button>
     <button class="rail-btn" data-nav="history" onclick="openHistory()"><svg><use href="#i-history"/></svg><span class="rail-label">History</span></button>
+    <button class="rail-btn" data-nav="tools" onclick="tools.toggle(this)" aria-haspopup="menu" aria-expanded="false"><svg><use href="#i-tools"/></svg><span class="rail-label">Tools</span></button>
     <div class="rail-spacer"></div>
     <button class="rail-btn desk" onclick="openBlank()"><svg><use href="#i-eye"/></svg><span class="rail-label">Open in about:blank</span></button>
     <button class="rail-btn" onclick="openSettings()"><svg><use href="#i-gear"/></svg><span class="rail-label">Settings</span></button>
@@ -555,16 +557,17 @@
 <script src="/uv/uv.config.js" defer onerror="window._uvFail=true"></script>
 <script src="/baremux/index.js" defer onerror="window._uvFail=true"></script>
 
-<script src="ui.js?v=2026.10.05-2"></script>
-<script src="sfx.js?v=2026.10.05-2"></script>
-<script src="bg.js?v=2026.10.05-2"></script>
-<script src="app.js?v=2026.10.05-2"></script>
-<script src="account.js?v=2026.10.05-2"></script>
-<script src="assistant.js?v=2026.10.05-2"></script>
-<script src="admin.js?v=2026.10.05-2"></script>
-<script src="social.js?v=2026.10.05-2"></script>
-<script src="apps.js?v=2026.10.05-2"></script>
-<script src="desktop.js?v=2026.10.05-2"></script>
-<script src="snip.js?v=2026.10.05-2"></script>
+<script src="ui.js?v=2026.10.06-1"></script>
+<script src="sfx.js?v=2026.10.06-1"></script>
+<script src="bg.js?v=2026.10.06-1"></script>
+<script src="app.js?v=2026.10.06-1"></script>
+<script src="account.js?v=2026.10.06-1"></script>
+<script src="assistant.js?v=2026.10.06-1"></script>
+<script src="admin.js?v=2026.10.06-1"></script>
+<script src="social.js?v=2026.10.06-1"></script>
+<script src="apps.js?v=2026.10.06-1"></script>
+<script src="desktop.js?v=2026.10.06-1"></script>
+<script src="snip.js?v=2026.10.06-1"></script>
+<script src="tools.js?v=2026.10.06-1"></script>
 </body>
 </html>

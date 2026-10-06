@@ -27,7 +27,8 @@ window.winapps = (() => {
   const wins = new Map();
   let z = 10, cascade = 0;
   const changed = () => window.desktop?.renderRunning?.();
-  const area = () => ({ w: innerWidth, h: innerHeight - TASKBAR });
+  // Outside desktop mode there's no taskbar, so windows can use the full height.
+  const area = () => ({ w: innerWidth, h: innerHeight - (document.documentElement.classList.contains('desktop') ? TASKBAR : 0) });
 
   function open(id) {
     const def = APPS[id]; if (!def) return;
