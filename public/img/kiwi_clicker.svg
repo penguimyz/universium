@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 215">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1f3a1a"/><stop offset=".6" stop-color="#14220f"/><stop offset="1" stop-color="#0c120a"/></linearGradient>
+    <radialGradient id="spot" cx=".5" cy=".45" r=".55"><stop offset="0" stop-color="#b7e86a" stop-opacity=".35"/><stop offset="1" stop-color="#b7e86a" stop-opacity="0"/></radialGradient>
+    <radialGradient id="flesh" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#e9f7b0"/><stop offset=".35" stop-color="#a8d84a"/><stop offset="1" stop-color="#6fae24"/></radialGradient>
+  </defs>
+  <rect width="460" height="215" fill="url(#bg)"/>
+  <rect width="460" height="215" fill="url(#spot)"/>
+  <!-- kiwi slice -->
+  <g transform="translate(230 107)">
+    <circle r="78" fill="#6b4a26"/>
+    <circle r="71" fill="url(#flesh)"/>
+    <ellipse rx="20" ry="18" fill="#f4fbd8"/>
+    <g fill="#1d1408">
+      <ellipse cx="0" cy="-30" rx="2.6" ry="5"/><ellipse cx="0" cy="30" rx="2.6" ry="5"/>
+      <ellipse cx="-30" cy="0" rx="5" ry="2.6"/><ellipse cx="30" cy="0" rx="5" ry="2.6"/>
+      <ellipse cx="21" cy="-21" rx="2.6" ry="5" transform="rotate(45 21 -21)"/><ellipse cx="-21" cy="21" rx="2.6" ry="5" transform="rotate(45 -21 21)"/>
+      <ellipse cx="-21" cy="-21" rx="2.6" ry="5" transform="rotate(-45 -21 -21)"/><ellipse cx="21" cy="21" rx="2.6" ry="5" transform="rotate(-45 21 21)"/>
+      <ellipse cx="11" cy="-28" rx="2.2" ry="4.4" transform="rotate(22 11 -28)"/><ellipse cx="-11" cy="28" rx="2.2" ry="4.4" transform="rotate(22 -11 28)"/>
+      <ellipse cx="-11" cy="-28" rx="2.2" ry="4.4" transform="rotate(-22 -11 -28)"/><ellipse cx="11" cy="28" rx="2.2" ry="4.4" transform="rotate(-22 11 28)"/>
+      <ellipse cx="28" cy="-11" rx="4.4" ry="2.2" transform="rotate(-22 28 -11)"/><ellipse cx="-28" cy="11" rx="4.4" ry="2.2" transform="rotate(-22 -28 11)"/>
+      <ellipse cx="28" cy="11" rx="4.4" ry="2.2" transform="rotate(22 28 11)"/><ellipse cx="-28" cy="-11" rx="4.4" ry="2.2" transform="rotate(22 -28 -11)"/>
+    </g>
+  </g>
+  <!-- click sparks -->
+  <g stroke="#e9f7b0" stroke-width="5" stroke-linecap="round" opacity=".85">
+    <line x1="330" y1="52" x2="348" y2="38"/><line x1="338" y1="80" x2="362" y2="78"/><line x1="318" y1="34" x2="322" y2="14"/>
+  </g>
+  <g fill="#e9f7b0" font-family="system-ui, sans-serif" font-weight="800" opacity=".9">
+    <text x="92" y="66" font-size="22">+1</text><text x="352" y="170" font-size="18">+5</text><text x="70" y="168" font-size="16">+2</text>
+  </g>
+</svg>

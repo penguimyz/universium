@@ -58,6 +58,7 @@ const GAMES = [
   { id: 'geodash',     name: 'Geometry Dash',          tag: 'Rhythm',     src: '/games/geometry_dash.html',         thumb: steam(322170),  desc: 'Jump to the beat. You will die a lot.' },
   { id: 'adofai',      name: 'A Dance of Fire and Ice',tag: 'Rhythm',     src: '/games/adofai.html',                thumb: steam(977950),  desc: 'One button, two planets, zero forgiveness.' },
   { id: 'cookie',      name: 'Cookie Clicker',         tag: 'Idle',       src: '/games/cookie_clicker.html',        thumb: steam(1454400), desc: 'Click the cookie. Or let the auto clicker do it.' },
+  { id: 'kiwi',        name: 'Kiwi Clicker',           tag: 'Idle',       src: '/cdn-proxy/s.gameszur.com/gamehub/kiwi_clicker/', thumb: 'img/kiwi_clicker.svg', desc: 'Click kiwis, buy upgrades, grow the orchard.' },
   { id: 'bloons',      name: 'Bloons TD 5',            tag: 'Strategy',   src: '/games/bloons_td5.html',            thumb: steam(306020),  desc: 'Place monkeys, pop balloons, lose to the MOAB.' },
   { id: 'retrobowl',   name: 'Retro Bowl',             tag: 'Sports',     src: '/games/retro_bowl.html',            thumb: 'img/retro_bowl.png', fit: 'contain', desc: 'Run a football team and throw the passes yourself.' },
   { id: 'liquidsoccer', name: 'Super Liquid Soccer',   tag: 'Sports',     src: '/games/super_liquid_soccer.html',   thumb: 'img/super_liquid_soccer.png', noFav: true, desc: 'Arcade soccer. Dribble, shoot and outscore the other team.', heavy: '28 MB' },
