@@ -1594,6 +1594,7 @@ function handleHotkey(e) {
     else toggleClickerPanel(true);
     return true;
   }
+  if (code === 'KeyS' && ['tab', 'game'].includes(viewKind(app.active))) { window.snip?.start(); return true; }
   if (code === 'KeyH') { openHistory(); return true; }
   if (code === 'KeyB') { toggleRail(); return true; }
   if (/^Digit[1-9]$/.test(code)) { const t = app.tabs[+code.slice(5) - 1]; if (t) switchTab(t.id); return !!t; }

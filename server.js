@@ -27,7 +27,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const bare = createBareServer("/bare/");
 const app = express();
 // Bump on each release; shown in Settings so you can tell which build is live.
-const VERSION = "2026.10.02-1";
+const VERSION = "2026.10.05-1";
 const STARTED_AT = Date.now();
 app.disable("x-powered-by");
 
@@ -36,7 +36,7 @@ app.disable("x-powered-by");
 app.use(compression({
   filter: (req, res) =>
     !req.path.startsWith("/cdn-proxy/") &&
-    req.path !== "/api/events" && req.path !== "/api/ai/chat" && // streams: compression would buffer them
+    req.path !== "/api/events" && req.path !== "/api/ai/chat" && req.path !== "/api/ai/vision" && // streams: compression would buffer them
     !/^\/games\/[^/]+\.html$/.test(req.path) &&
     compression.filter(req, res),
 }));
@@ -431,7 +431,8 @@ app.get("/api/tv/:id", (req, res) =>
 // Passing `dispatcher: ollamaAgent` explicitly routes this one call through
 // the local SOCKS5 endpoint tailscaled exposes; nothing else on the server
 // goes through it, so TMDB etc. stay on their normal direct path.
-app.use(express.json({ limit: "2mb" })); // room for synced account data
+const jsonSmall = express.json({ limit: "2mb" }), jsonBig = express.json({ limit: "10mb" });
+app.use((req, res, next) => (req.path === "/api/ai/vision" ? jsonBig : jsonSmall)(req, res, next)); // room for synced account data and screenshots
 
 // ── Extras (games from a GitHub repo) and game requests ─────────────────────
 registerExtras(app, { proxyFile, swSuppressor: SW_SUPPRESSOR });
@@ -569,6 +570,13 @@ app.post("/api/ai/chat", async (req, res) => {
     // can skip it; older versions ignore this field. Set OLLAMA_THINK=true to keep it.
     think: process.env.OLLAMA_THINK === "true",
   });
+  streamOllama(res, model, payload);
+});
+
+// Sends a chat request to Ollama and streams the reply back as newline-delimited JSON:
+// {"model"} first, then {"t":"text"} chunks, then {"done":true} (or {"error":"..."}).
+// Hides <think>…</think> reasoning while it streams.
+function streamOllama(res, model, payload) {
   const target = new URL(`${OLLAMA_HOST}/api/chat`);
 
   let started = false;
@@ -650,6 +658,56 @@ app.post("/api/ai/chat", async (req, res) => {
 
   upstreamReq.write(payload);
   upstreamReq.end();
+}
+
+
+// ── Snip & solve: a screenshot of a problem goes to a vision model ────────────
+// deepseek-r1 can't see images, so this uses a separate model (OLLAMA_VISION_MODEL,
+// default qwen2.5vl:7b). Body: { messages: [{ role, content, images?: [base64 jpeg/png] }] }.
+const VISION_MODEL = () => process.env.OLLAMA_VISION_MODEL || "qwen2.5vl:7b";
+const VISION_PROMPT = process.env.AI_VISION_PROMPT || [
+  "You are a patient tutor. The user sends a screenshot cut from a web page, usually a homework or practice problem.",
+  "Read everything in the image carefully, including numbers, units, answer choices, graphs and diagrams.",
+  "Start with the answer, on its own line, like: **Answer:** 42. If there are several questions, number them and give each answer.",
+  "For multiple choice, give the letter and the text of the right choice.",
+  "Then explain the steps briefly and clearly so the user understands how to get it. Write math with LaTeX between \\( \\) or \\[ \\].",
+  "If part of the problem is cut off or unreadable, say what's missing instead of guessing.",
+  "For follow-up questions, answer them directly using the same screenshot.",
+].join(" ");
+
+app.post("/api/ai/vision", async (req, res) => {
+  const msgs = Array.isArray(req.body?.messages) ? req.body.messages : [];
+  let images = 0;
+  const clean = msgs
+    .filter(m => m && (m.role === "user" || m.role === "assistant") && typeof m.content === "string")
+    .slice(-20)
+    .map(m => {
+      const out = { role: m.role, content: m.content.slice(0, 4000) };
+      if (m.role === "user" && Array.isArray(m.images)) {
+        const imgs = m.images
+          .filter(x => typeof x === "string")
+          .map(x => x.replace(/^data:image\/[a-z]+;base64,/, ""))
+          .filter(x => /^[A-Za-z0-9+/=]+$/.test(x.slice(0, 200)) && x.length < 7_000_000)
+          .slice(0, 2);
+        images += imgs.length;
+        if (imgs.length) out.images = imgs;
+      }
+      return out;
+    });
+  if (!clean.length || !images) return res.status(400).json({ error: "Send a screenshot to solve." });
+
+  const model = VISION_MODEL();
+  const installed = await listModels();
+  if (installed.length && !installed.includes(model) && !installed.includes(model + ":latest")) {
+    return res.status(400).json({ error: `The vision model ${model} isn't installed on the AI computer.`, hint: `On that PC, run: ollama pull ${model}` });
+  }
+  const payload = JSON.stringify({
+    model,
+    messages: [{ role: "system", content: VISION_PROMPT }, ...clean],
+    stream: true,
+    options: { num_predict: 1500, temperature: 0.2 },
+  });
+  streamOllama(res, model, payload);
 });
 
 // ── UV / transport routes ─────────────────────────────────────────────────────
