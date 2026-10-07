@@ -4,6 +4,7 @@ window.social = (() => {
   const st = {
     loaded: false, me: null, friends: [], dms: [], incoming: [], outgoing: [], blocked: [],
     open: null, msgs: {}, more: {}, theirRead: {}, typing: {}, es: null, authMode: 'login', busy: false,
+    side: 'chats', people: null, pq: '', sel: null, hidden: false,
   };
   const root = () => document.getElementById('friends-root');
   // Anyone you can chat with: friends plus direct messages with admins.
@@ -44,12 +45,14 @@ window.social = (() => {
     es.addEventListener('message', e => onMessage(JSON.parse(e.data)));
     es.addEventListener('friends', e => {
       const before = st.incoming.length;
-      apply(JSON.parse(e.data)); render();
+      apply(JSON.parse(e.data)); if (st.side === 'people') loadPeople(); else render();
       if (st.incoming.length > before) { toast(`${st.incoming[st.incoming.length - 1].username} sent you a friend request`); sfx.chime(); }
     });
     es.addEventListener('presence', e => {
       const d = JSON.parse(e.data), f = who(d.id);
-      if (f) { f.online = d.online; render(); }
+      if (f) { f.online = d.online; if (st.side !== 'people') render(); }
+      const p = st.people?.find(x => x.id === d.id);
+      if (p) { p.online = d.online; if (st.side === 'people') { renderPeople(); renderProfile(); } }
     });
     es.addEventListener('typing', e => {
       const d = JSON.parse(e.data); st.typing[d.from] = Date.now();
@@ -89,8 +92,9 @@ window.social = (() => {
     if (app.active === 'friends') { renderList(); if (st.open === fid) renderMessages(true); }
   }
 
+  const badgeCount = () => people().reduce((a, f) => a + (f.unread || 0), 0) + st.incoming.length;
   function badge() {
-    const n = people().reduce((a, f) => a + (f.unread || 0), 0) + st.incoming.length;
+    const n = badgeCount();
     document.querySelectorAll('[data-badge="friends"]').forEach(b => { b.textContent = n > 9 ? '9+' : n; b.hidden = !n; });
   }
 
@@ -106,22 +110,34 @@ window.social = (() => {
     if (!st.loaded) { el.innerHTML = '<div class="fl-center"><div class="spinner"></div></div>'; return; }
     if (!st.me) return renderAuth(el);
     el.innerHTML = `
-      <div class="fl${st.open ? ' conv-open' : ''}">
+      <div class="fl${st.open && st.side === 'chats' ? ' conv-open' : ''}">
         <aside class="fl-side">
           <div class="fl-me">
             ${avatar(st.me, 38)}
             <div><b>${esc(st.me.username)}${tag(st.me)}</b><small>Share your username so friends can add you</small></div>
             <button class="icon-btn" title="Sign out" aria-label="Sign out" data-act="logout">${svg('i-logout')}</button>
           </div>
+          <div class="seg fl-tabs" role="tablist">
+            <button type="button" data-side="chats" aria-pressed="${st.side === 'chats'}">Chats${badgeCount() ? ` <span class="count">${badgeCount()}</span>` : ''}</button>
+            <button type="button" data-side="people" aria-pressed="${st.side === 'people'}">People</button>
+          </div>
+          ${st.side === 'people' ? `
+          <form class="fl-add" data-form="psearch" onsubmit="return false">
+            <input class="field" name="q" placeholder="Search people" autocomplete="off" maxlength="20" spellcheck="false" value="${esc(st.pq)}">
+          </form>
+          <div class="fl-scroll" id="fl-people"></div>
+          <label class="fl-vis"><span><b>Show me in People</b><small>Turn off to only be found by your exact username</small></span>
+            <input type="checkbox" data-pvis ${st.hidden ? '' : 'checked'}><i class="sw"></i></label>` : `
           <form class="fl-add" data-form="add">
             <input class="field" name="username" placeholder="Add a friend by username" autocomplete="off" maxlength="20" spellcheck="false">
             <button class="btn primary" type="submit">Add</button>
           </form>
-          <div class="fl-scroll" id="fl-list"></div>
+          <div class="fl-scroll" id="fl-list"></div>`}
         </aside>
         <main class="fl-chat" id="fl-chat"></main>
       </div>`;
-    renderList(); renderChat();
+    if (st.side === 'people') { if (st.sel) el.querySelector('.fl').classList.add('conv-open'); renderPeople(); renderProfile(); if (!st.people) loadPeople(); }
+    else { renderList(); renderChat(); }
   }
 
   function renderAuth(el) {
@@ -199,6 +215,71 @@ window.social = (() => {
     renderTyping();
   }
 
+  /* ── People ── */
+  async function loadPeople() {
+    try {
+      const d = await api('/api/people');
+      st.people = d.people; st.hidden = d.hidden;
+      if (st.sel && !st.people.some(p => p.id === st.sel)) st.sel = null;
+      const cb = document.querySelector('[data-pvis]'); if (cb) cb.checked = !st.hidden;
+    } catch (e) { st.people = st.people || []; if (e.status !== 401) toast(e.message, 'err'); }
+    if (st.side === 'people' && app.active === 'friends') { renderPeople(); renderProfile(); }
+  }
+  const joined = t => t ? 'Joined ' + new Date(t).toLocaleDateString([], { month: 'short', year: 'numeric' }) : '';
+  const relLabel = { you: 'You', friend: 'Friend', incoming: 'Wants to be friends', outgoing: 'Request sent', blocked: 'Blocked', none: '' };
+  function personAction(p, big) {
+    const cls = big ? 'btn' : 'btn sm';
+    switch (p.rel) {
+      case 'none': return `<button class="${cls} primary" data-padd="${esc(p.username)}">${big ? 'Add friend' : 'Add'}</button>`;
+      case 'incoming': return `<button class="${cls} primary" data-act="accept" data-id="${p.id}">Accept</button>`;
+      case 'outgoing': return `<button class="${cls}" data-act="decline" data-id="${p.id}" title="Cancel request">${big ? 'Cancel request' : 'Sent'}</button>`;
+      case 'friend': return `<button class="${cls}" data-pchat="${p.id}">Message</button>`;
+      case 'blocked': return `<button class="${cls}" data-act="unblock" data-id="${p.id}">Unblock</button>`;
+      default: return big ? '' : '<span class="fl-you">You</span>';
+    }
+  }
+  function renderPeople() {
+    const box = document.getElementById('fl-people'); if (!box) return;
+    if (!st.people) { box.innerHTML = '<div class="fl-center"><div class="spinner"></div></div>'; return; }
+    const q = st.pq.trim().toLowerCase();
+    const list = q ? st.people.filter(p => p.username.toLowerCase().includes(q)) : st.people;
+    const on = list.filter(p => p.online && p.rel !== 'you').length;
+    box.innerHTML = `<h3 class="fl-h">${q ? 'Results' : 'Everyone'} <span class="count">${list.length}</span>${on ? `<span class="fl-on">${on} online</span>` : ''}</h3>` + (list.length ? list.map(p => `
+      <div class="fl-friend fl-person${st.sel === p.id ? ' active' : ''}" data-person="${p.id}" role="button" tabindex="0">
+        <span class="av-wrap">${avatar(p, 36)}<i class="dot${p.online ? ' on' : ''}"></i></span>
+        <span class="fl-fmain"><b>${esc(p.username)}${tag(p)}</b><small>${p.online ? 'Online' : esc(relLabel[p.rel] || joined(p.joined))}</small></span>
+        ${personAction(p)}
+      </div>`).join('') : `<p class="fl-empty">No one called “${esc(st.pq)}”. They might have turned off Show me in People, so try adding their exact username in Chats.</p>`);
+  }
+  function renderProfile() {
+    const box = document.getElementById('fl-chat'); if (!box || st.side !== 'people') return;
+    const p = st.people?.find(x => x.id === st.sel);
+    if (!p) {
+      box.innerHTML = `<div class="fl-center"><div class="fl-hello">${svg('i-users')}<h2>People on Universium</h2><p>${st.people ? `${st.people.length} ${st.people.length === 1 ? 'person has' : 'people have'} an account.` : ''} Pick someone to see their profile, or add them as a friend.</p></div></div>`;
+      return;
+    }
+    box.innerHTML = `
+      <header class="fl-head"><button class="icon-btn fl-back" data-act="back" aria-label="Back">${svg('i-back')}</button><div><b>Profile</b></div></header>
+      <div class="fl-center"><div class="fl-profile">
+        <span class="av-wrap">${avatar(p, 84)}<i class="dot${p.online ? ' on' : ''}"></i></span>
+        <h2>${esc(p.username)}${tag(p)}</h2>
+        <p class="fl-pmeta"><span class="${p.online ? 'on' : ''}">${p.online ? 'Online now' : 'Offline'}</span>${p.joined ? ` · ${joined(p.joined)}` : ''}${relLabel[p.rel] && p.rel !== 'you' ? ` · ${relLabel[p.rel]}` : ''}</p>
+        <div class="fl-pacts">
+          ${personAction(p, true)}
+          ${p.rel === 'friend' ? `<button class="btn duel-btn" data-act="duel" data-id="${p.id}" ${p.online ? '' : 'disabled title="They need to be online"'}>${svg('i-duel')}<span>Challenge</span></button>` : ''}
+          ${p.rel === 'you' ? `<p class="fl-empty">This is how other people see you.</p>` : ''}
+        </div>
+      </div></div>`;
+  }
+  async function addPerson(name) {
+    try {
+      const had = st.friends.length;
+      apply(await api('/api/friends/request', { method: 'POST', body: { username: name } }));
+      toast(st.friends.length > had ? `You’re now friends with ${name}` : `Request sent to ${name}`, 'ok');
+      await loadPeople();
+    } catch (err) { toast(err.message, 'err'); }
+  }
+
   function renderMessages(stick) {
     const box = document.getElementById('fl-msgs'); if (!box || !st.open) return;
     const list = st.msgs[st.open] || [];
@@ -271,12 +352,12 @@ window.social = (() => {
 
   async function act(action, id, extra) {
     try {
-      if (action === 'logout') { await api('/api/auth/logout', { method: 'POST' }); st.me = null; document.documentElement.classList.remove('is-admin'); st.open = null; st.msgs = {}; connect(); render(); renderSettings(); badge(); toast('Signed out'); window.account?.afterLogout(); return; }
+      if (action === 'logout') { await api('/api/auth/logout', { method: 'POST' }); st.me = null; document.documentElement.classList.remove('is-admin'); st.open = null; st.msgs = {}; st.people = null; st.sel = null; st.side = 'chats'; connect(); render(); renderSettings(); badge(); toast('Signed out'); window.account?.afterLogout(); return; }
       if (action === 'block' && !(await ui.confirm({ title: 'Block them?', message: 'They’ll be removed from your friends and can’t send you requests or messages.', confirmText: 'Block', danger: true }))) return;
       if (action === 'remove' && !(await ui.confirm({ title: 'Remove this friend?', message: 'You can add each other again later.', confirmText: 'Remove', danger: true }))) return;
       apply(await api(`/api/friends/${id}/${action}`, { method: 'POST' }));
       if (action === 'accept') { toast('Friend added', 'ok'); }
-      render();
+      if (st.side === 'people') await loadPeople(); else render();
     } catch (e) { toast(e.message, 'err'); }
   }
 
@@ -311,10 +392,21 @@ window.social = (() => {
     const r = root(); if (!r || !r.contains(e.target)) return;
     const mode = e.target.closest('.auth-seg [data-mode]');
     if (mode) { st.authMode = mode.dataset.mode; render(); sfx.tick(); return; }
+    const sd = e.target.closest('[data-side]');
+    if (sd) { st.side = sd.dataset.side; sfx.tick(); if (st.side === 'people') loadPeople(); render(); return; }
+    const pa = e.target.closest('[data-padd]'); if (pa) return addPerson(pa.dataset.padd);
+    const pc = e.target.closest('[data-pchat]');
+    if (pc) { st.side = 'chats'; render(); return openConv(pc.dataset.pchat); }
+    const pr = !e.target.closest('button') && e.target.closest('[data-person]');
+    if (pr) { st.sel = pr.dataset.person; sfx.tick(); renderPeople(); renderProfile(); document.querySelector('.fl')?.classList.add('conv-open'); return; }
     const o = e.target.closest('[data-open]'); if (o) return openConv(o.dataset.open);
     const a = e.target.closest('[data-act]'); if (!a) return;
     const action = a.dataset.act;
-    if (action === 'back') { st.open = null; document.querySelector('.fl')?.classList.remove('conv-open'); renderList(); renderChat(); return; }
+    if (action === 'back') {
+      document.querySelector('.fl')?.classList.remove('conv-open');
+      if (st.side === 'people') { st.sel = null; renderPeople(); renderProfile(); return; }
+      st.open = null; renderList(); renderChat(); return;
+    }
     if (action === 'older') { const list = st.msgs[st.open] || []; return loadMessages(st.open, list[0]?.t); }
     if (action === 'duel') {
       const m = document.getElementById('menu-duel'); m.dataset.id = a.dataset.id;
@@ -332,7 +424,7 @@ window.social = (() => {
     const id = e.currentTarget.dataset.id; hideMenus();
     try {
       const r = await api('/api/duel/invite', { method: 'POST', body: { friendId: id, rounds: Number(b.dataset.rounds) } });
-      toast(`Challenge sent to ${who(id)?.username || 'your friend'}`, 'ok');
+      toast(`Challenge sent to ${who(id)?.username || st.people?.find(p => p.id === id)?.username || 'your friend'}`, 'ok');
       launchDuel('?match=' + r.id);
     } catch (err) {
       if (err.data?.id) return launchDuel('?match=' + err.data.id);
@@ -372,6 +464,7 @@ window.social = (() => {
   });
   let lastTyping = 0;
   document.addEventListener('input', e => {
+    if (e.target.matches?.('[data-form="psearch"] input')) { st.pq = e.target.value; renderPeople(); return; }
     const ta = e.target.closest('.fl-compose textarea'); if (!ta) return;
     ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 140) + 'px';
     if (st.open && Date.now() - lastTyping > 2500) { lastTyping = Date.now(); api(`/api/typing/${st.open}`, { method: 'POST' }).catch(() => {}); }
@@ -379,6 +472,14 @@ window.social = (() => {
   document.addEventListener('keydown', e => {
     const ta = e.target.closest?.('.fl-compose textarea');
     if (ta && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); ta.form.requestSubmit(); }
+  });
+  document.addEventListener('change', async e => {
+    const cb = e.target.closest?.('[data-pvis]'); if (!cb) return;
+    try { const d = await api('/api/account/visibility', { method: 'POST', body: { visible: cb.checked } }); st.hidden = d.hidden; toast(d.hidden ? 'You’re hidden from People' : 'You show up in People', 'ok'); }
+    catch (err) { cb.checked = !cb.checked; toast(err.message, 'err'); }
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Enter' && e.target.matches?.('[data-person]')) e.target.click();
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && st.open && app.active === 'friends') markRead(st.open); });
 

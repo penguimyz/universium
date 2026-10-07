@@ -1455,3 +1455,28 @@ html.desktop .snip-panel { bottom: 64px; top: 14px; }
 .wn-rel li { position: relative; padding-left: 14px; font-size: 13px; color: var(--muted); line-height: 1.45; }
 .wn-rel li::before { content: ''; position: absolute; left: 2px; top: .62em; width: 5px; height: 5px; border-radius: 50%; background: var(--line-2); }
 .wn-rel.latest li::before { background: var(--accent); }
+
+/* ── Friends → People (social.js) ─────────────────── */
+.fl-tabs { margin: 12px 14px 0; }
+.fl-tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.fl-tabs .count { padding: 0 6px; font-size: 11px; }
+.fl-on { margin-left: auto; font-weight: 500; color: #34d399; }
+.fl-person { cursor: pointer; }
+.fl-person .btn.sm { flex-shrink: 0; }
+.fl-you { font-size: 12px; color: var(--faint); padding: 0 6px; }
+.fl-vis { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--line); cursor: pointer; }
+.fl-vis span { flex: 1; min-width: 0; }
+.fl-vis b { display: block; font-size: 13px; font-weight: 600; }
+.fl-vis small { display: block; font-size: 11.5px; color: var(--faint); }
+.fl-vis input { position: absolute; opacity: 0; pointer-events: none; }
+.fl-vis .sw { width: 38px; height: 22px; border-radius: 999px; background: var(--line-2); position: relative; flex-shrink: 0; transition: background .18s; }
+.fl-vis .sw::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .18s var(--ease); }
+.fl-vis input:checked + .sw { background: var(--accent); }
+.fl-vis input:checked + .sw::after { transform: translateX(16px); }
+.fl-vis input:focus-visible + .sw { outline: 2px solid var(--accent); outline-offset: 2px; }
+.fl-profile { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; max-width: 360px; animation: fade .3s var(--ease) both; }
+.fl-profile .av-wrap .dot { width: 18px; height: 18px; right: 2px; bottom: 2px; border-width: 3px; }
+.fl-profile h2 { font: 700 24px var(--display); letter-spacing: -.02em; margin-top: 10px; display: flex; align-items: center; gap: 8px; }
+.fl-pmeta { color: var(--faint); font-size: 13px; }
+.fl-pmeta .on { color: #34d399; }
+.fl-pacts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }

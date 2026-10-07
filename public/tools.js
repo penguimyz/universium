@@ -62,6 +62,11 @@ window.tools = (() => {
 
   /* ── What's new ── newest first. Add a line here with each release. */
   const UPDATES = [
+    { v: '2026.10.06-3', date: 'Oct 6', title: 'People', items: [
+      'Friends has a new People tab: see everyone on Universium, search by name, and add friends from there',
+      'Tap someone to see their profile: online status, when they joined, and Message or Challenge buttons for friends',
+      'Don’t want to be listed? Turn off Show me in People and you can only be added by your exact username',
+    ] },
     { v: '2026.10.06-2', date: 'Oct 6', title: 'Duels makeover and a Tools menu', items: [
       'Duels looks a lot more like ROUNDS: flat colored arenas, round little players, glowing bullets and cards',
       'Duels menus match the rest of Universium',
